@@ -1,0 +1,9 @@
+#!/bin/bash
+
+set -ex
+
+go build
+mv terraform-provider-kafka-connect ~/.terraform.d/plugins/terraform-provider-kc
+cd examples
+terraform init
+terraform plan
