@@ -3,7 +3,7 @@
 set -ex
 
 go build
-mv terraform-provider-kafka-connect ~/.terraform.d/plugins/terraform-provider-kc
+mv terraform-provider-kafka-connect ~/.terraform.d/plugins/terraform-provider-kafka-connect
 cd examples
 terraform init
 terraform plan

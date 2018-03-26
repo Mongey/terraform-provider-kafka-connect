@@ -1,10 +1,3 @@
-A [Terraform][1] plugin for managing [Apache Kafka Connect][2].
-
-[![CircleCI](https://circleci.com/gh/Mongey/terraform-provider-kafka-connect.svg?style=svg)](https://circleci.com/gh/Mongey/terraform-provider-kafka-connect)
-
-# Example
-
-```hcl
 provider "kafka-connect" {
   url = "http://localhost:8083"
 }
@@ -21,7 +14,3 @@ resource "kafka-connect_connector" "sqlite-sink" {
     "auto.create"     = "true"
   }
 }
-```
-
-[1]: https://www.terraform.io
-[2]: https://kafka.apache.org/documentation/#connect
