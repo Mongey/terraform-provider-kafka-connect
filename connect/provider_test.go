@@ -1,4 +1,4 @@
-package kafka
+package connect
 
 import (
 	"testing"
@@ -22,6 +22,6 @@ func testAccPreCheck(t *testing.T) {
 func accProvider() map[string]terraform.ResourceProvider {
 	provider := Provider().(*schema.Provider)
 	return map[string]terraform.ResourceProvider{
-		"kc": provider,
+		"kafka-connect": provider,
 	}
 }

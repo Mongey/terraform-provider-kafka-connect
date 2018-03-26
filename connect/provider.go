@@ -1,4 +1,4 @@
-package kafka
+package connect
 
 import (
 	"github.com/hashicorp/terraform/helper/schema"
@@ -17,7 +17,7 @@ func Provider() terraform.ResourceProvider {
 
 		ConfigureFunc: providerConfigure,
 		ResourcesMap: map[string]*schema.Resource{
-			"kc_connector": kafkaConnectorResource(),
+			"kafka-connect_connector": kafkaConnectorResource(),
 		},
 	}
 }
