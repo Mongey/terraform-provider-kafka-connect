@@ -12,6 +12,6 @@ test:
 		xargs -t -n4 go test $(TESTARGS) -timeout=30s -parallel=4
 
 testacc:
-	KAFKA_BROKER=localhost:9092 TF_ACC=1 go test $(TEST) -v $(TESTARGS) -timeout 120m
+	KAFKA_CONNECT_URL=http://localhost:8083 TF_LOG=debug TF_ACC=1 go test $(TEST) -v $(TESTARGS) -timeout 120m
 
 .PHONY: build test testacc
