@@ -3,7 +3,7 @@ jobs:
   build:
     working_directory: /go/src/github.com/Mongey/terraform-provider-kafka-connect
     docker:
-      - image: circleci/golang:1.9
+      - image: circleci/golang:1.10
         environment:
           TEST_RESULTS: /tmp/test-results
       - image: confluentinc/cp-zookeeper:latest
@@ -16,6 +16,23 @@ jobs:
           KAFKA_ZOOKEEPER_CONNECT: localhost:2181
           KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
           KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      - image: confluentinc/cp-kafka-connect:4.0.0-2
+        environment:
+          CONNECT_BOOTSTRAP_SERVERS: PLAINTEXT://localhost:9092
+          CONNECT_GROUP_ID: connect
+          CONNECT_REST_PORT: 8083
+          CONNECT_CONFIG_STORAGE_TOPIC: "quickstart-config"
+          CONNECT_OFFSET_STORAGE_TOPIC: "quickstart-offsets"
+          CONNECT_STATUS_STORAGE_TOPIC: "quickstart-status"
+          CONNECT_KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+          CONNECT_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+          CONNECT_INTERNAL_KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+          CONNECT_INTERNAL_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+          CONNECT_REST_ADVERTISED_HOST_NAME: "localhost"
+          CONNECT_PLUGIN_PATH: /usr/share/java
+          CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+          CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+          CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
     steps:
       - checkout
       - run: go build
@@ -24,6 +41,13 @@ jobs:
           destination: terraform-provider-kafka
       - run: go get github.com/jstemmer/go-junit-report
       - run: mkdir -p $TEST_RESULTS
+      - run:
+          name: Wait for connect
+          command: |
+            until $(curl --output /dev/null --silent --head --fail http://localhost:8083); do
+              printf '.'
+              sleep 5
+            done
       - run:
           name: Run Tests
           command: |
