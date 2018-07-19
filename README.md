@@ -18,7 +18,7 @@ provider "kafka-connect" {
 }
 
 resource "kafka-connect_connector" "sqlite-sink" {
-  name = "sqlite-sink"
+  name = "test-sink"
 
   config = {
     "name"            = "test-sink"
