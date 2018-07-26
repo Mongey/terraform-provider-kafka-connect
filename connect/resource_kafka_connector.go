@@ -46,13 +46,13 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	connectorResponse, err := c.CreateConnector(req, true)
-	fmt.Printf("[INFO] Created the connector %v\n", connectorResponse)
-
-	if err == nil {
-		d.SetId(name)
+	if err != nil {
+		fmt.Printf(err)
+		return err
 	}
-
-	return err
+	fmt.Printf("[INFO] Created the connector %v\n", connectorResponse)
+	d.SetId(name)
+	return nil
 }
 
 func nameFromRD(d *schema.ResourceData) string {
@@ -67,14 +67,15 @@ func connectorDelete(d *schema.ResourceData, meta interface{}) error {
 		Name: name,
 	}
 
-	fmt.Printf("[INFO] Deleing the connector %s\n", name)
-
+	fmt.Printf("[INFO] Deleting the connector %s\n", name)
 	_, err := c.DeleteConnector(req, true)
-	if err == nil {
-		d.SetId("")
+	if err != nil {
+		fmt.Printf(err)
+		return err
 	}
-
-	return err
+	fmt.Printf("[INFO] Connector %s deleted\n", name)
+	d.SetId("")
+	return nil
 }
 
 func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
@@ -92,13 +93,13 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 
 	log.Printf("[INFO] Looking for %s", name)
 	conn, err := c.UpdateConnector(req, true)
-
-	if err == nil {
-		log.Printf("[INFO] Config updated %v", conn.Config)
-		d.Set("config", conn.Config)
+	if err != nil {
+		fmt.Printf(err)
+		return err
 	}
-
-	return err
+	log.Printf("[INFO] Config updated %v", conn.Config)
+	d.Set("config", conn.Config)
+	return nil
 }
 
 func connectorRead(d *schema.ResourceData, meta interface{}) error {
@@ -110,13 +111,14 @@ func connectorRead(d *schema.ResourceData, meta interface{}) error {
 	}
 	log.Printf("[INFO] Looking for %s", name)
 	conn, err := c.GetConnector(req)
-
-	if err == nil {
-		log.Printf("[INFO] found the config %v", conn.Config)
-		d.Set("config", conn.Config)
+	if err != nil {
+		fmt.Printf(err)
+		return err
 	}
 
-	return err
+	log.Printf("[INFO] found the config %v", conn.Config)
+	d.Set("config", conn.Config)
+	return nil
 }
 
 func configFromRD(d *schema.ResourceData) map[string]string {
@@ -126,7 +128,7 @@ func configFromRD(d *schema.ResourceData) map[string]string {
 	for k, v := range cfg {
 		switch v := v.(type) {
 		case string:
-			config[k] = v
+			config[k.(string)] = v.(string)
 		}
 	}
 

@@ -2,6 +2,12 @@
 
 
 [[projects]]
+  name = "github.com/Mongey/terraform-provider-kafka-connect"
+  packages = ["connect"]
+  revision = "2c6ca252a03459961e49879ccfa5fad5227eda6e"
+  version = "v0.1.0"
+
+[[projects]]
   name = "github.com/agext/levenshtein"
   packages = ["."]
   revision = "5f10fee965225ac1eecdc234c09daf5cd9e7f7b6"
@@ -451,6 +457,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "0f1d23a645d97b52a8f100218786db23fb476ae058b6d8ea7ce69ad806da9138"
+  inputs-digest = "bb3ab2fa135686f4df0617ab57ee237f2130558d5ac6272460fff2a56c39f593"
   solver-name = "gps-cdcl"
   solver-version = 1
