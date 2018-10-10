@@ -3,6 +3,7 @@ package connect
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/hashicorp/terraform/helper/schema"
 	kc "github.com/ricardo-ch/go-kafka-connect/lib/connectors"
@@ -38,6 +39,15 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 	c := meta.(kc.Client)
 	name := nameFromRD(d)
 	config := configFromRD(d)
+	if !kc.TryUntil(
+		func() bool {
+			_, err := c.GetAll()
+			return err == nil
+		},
+		5*time.Minute,
+	) {
+		return fmt.Errorf("timed out trying to connect to kafka-connect server at %s", c.URL)
+	}
 	req := kc.CreateConnectorRequest{
 		ConnectorRequest: kc.ConnectorRequest{
 			Name: name,
