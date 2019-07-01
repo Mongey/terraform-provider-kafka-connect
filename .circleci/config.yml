@@ -3,9 +3,10 @@ jobs:
   build:
     working_directory: /go/src/github.com/Mongey/terraform-provider-kafka-connect
     docker:
-      - image: circleci/golang:1.10
+      - image: circleci/golang:1.12
         environment:
           TEST_RESULTS: /tmp/test-results
+          GO111MODULE: "on"
       - image: confluentinc/cp-zookeeper:latest
         environment:
           ZOOKEEPER_CLIENT_PORT: 2181
@@ -35,10 +36,18 @@ jobs:
           CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
     steps:
       - checkout
+      - restore_cache:
+          keys:
+            - go-mod-v1-{{ checksum "go.sum" }}
       - run: go build
+      - save_cache:
+          key: go-mod-v1-{{ checksum "go.sum" }}
+          paths:
+            - "/go/pkg/mod"
       - store_artifacts:
-          path: /go/src/github.com/Mongey/terraform-provider-kafka/terraform-provider-kafka-connect
-          destination: terraform-provider-kafka
+          path: /go/src/github.com/Mongey/terraform-provider-kafka-connect/terraform-provider-kafka
+          destination: terraform-provider-kafka-connect
+      - run: make test
       - run: go get github.com/jstemmer/go-junit-report
       - run: mkdir -p $TEST_RESULTS
       - run:
