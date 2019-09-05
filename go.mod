@@ -6,3 +6,5 @@ require (
 	github.com/hashicorp/terraform v0.12.1
 	github.com/ricardo-ch/go-kafka-connect v0.0.0-20190603085745-132b7b7ad380a6c860fecc0ca9b0a2af9bf45471
 )
+
+replace git.apache.org/thrift.git => github.com/apache/thrift v0.0.0-20180902110319-2566ecd5d999
