@@ -55,7 +55,7 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 		Config: config,
 	}
 
-	connectorResponse, err := c.CreateConnector(req, true)
+	connectorResponse, err := c.CreateConnector(req, false)
 	fmt.Printf("[INFO] Created the connector %v\n", connectorResponse)
 
 	if err == nil {
@@ -101,7 +101,7 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	log.Printf("[INFO] Looking for %s", name)
-	conn, err := c.UpdateConnector(req, true)
+	conn, err := c.UpdateConnector(req, false)
 
 	if err == nil {
 		log.Printf("[INFO] Config updated %v", conn.Config)
