@@ -29,7 +29,14 @@ func kafkaConnectorResource() *schema.Resource {
 				Type:        schema.TypeMap,
 				Optional:    true,
 				ForceNew:    false,
-				Description: "A map of string k/v attributes",
+				Description: "A map of string k/v attributes.",
+			},
+			"config_sensitive": {
+				Type: schema.TypeMap,
+				Optional: true,
+				ForceNew: false,
+				Sensitive: true,
+				Description: "A map of string k/v attributes which are sensitive, such as passwords.",
 			},
 		},
 	}
