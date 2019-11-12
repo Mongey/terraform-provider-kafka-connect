@@ -140,27 +140,11 @@ func configFromRD(d *schema.ResourceData) map[string]string {
 	cfg := d.Get("config").(map[string]interface{})
 	scfg := d.Get("config_sensitive").(map[string]interface{})
 	config := make(map[string]string)
-
-	for k1, v1 := range cfg {
-		for k2, v2 := range scfg {
-			// if there is a key conflict keep only the sensitive values
-			if k1 == k2 {
-				switch v2 := v2.(type) {
-				case string:
-					config[k2] = v2
-				}
-			// otherwise insert both into final config
-			} else {
-				switch v1 := v1.(type) {
-				case string:
-					config[k1] = v1
-				}
-				switch v2 := v2.(type) {
-				case string:
-					config[k2] = v2
-				}
-			}
-		}
+	for k, v := range cfg {
+		config[k] = v.(string)
+	}
+	for k, v := range scfg {
+		config[k] = v.(string)
 	}
 
 	return config
