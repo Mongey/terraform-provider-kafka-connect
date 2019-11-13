@@ -29,7 +29,14 @@ func kafkaConnectorResource() *schema.Resource {
 				Type:        schema.TypeMap,
 				Optional:    true,
 				ForceNew:    false,
-				Description: "A map of string k/v attributes",
+				Description: "A map of string k/v attributes.",
+			},
+			"config_sensitive": {
+				Type: schema.TypeMap,
+				Optional: true,
+				ForceNew: false,
+				Sensitive: true,
+				Description: "A map of string k/v attributes which are sensitive, such as passwords.",
 			},
 		},
 	}
@@ -131,13 +138,13 @@ func connectorRead(d *schema.ResourceData, meta interface{}) error {
 
 func configFromRD(d *schema.ResourceData) map[string]string {
 	cfg := d.Get("config").(map[string]interface{})
+	scfg := d.Get("config_sensitive").(map[string]interface{})
 	config := make(map[string]string)
-
 	for k, v := range cfg {
-		switch v := v.(type) {
-		case string:
-			config[k] = v
-		}
+		config[k] = v.(string)
+	}
+	for k, v := range scfg {
+		config[k] = v.(string)
 	}
 
 	return config

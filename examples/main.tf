@@ -13,4 +13,8 @@ resource "kafka-connect_connector" "sqlite-sink" {
     "connection.url"  = "jdbc:sqlite:test.db"
     "auto.create"     = "true"
   }
+
+  config_sensitive = {
+    "password" = "this-should-never-appear-unmasked"
+  }
 }
