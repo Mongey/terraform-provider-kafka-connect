@@ -35,7 +35,7 @@ func kafkaConnectorResource() *schema.Resource {
 				Type: schema.TypeMap,
 				Optional: true,
 				ForceNew: false,
-				Sensitive: true,
+				Sensitive: false,
 				Description: "A map of string k/v attributes which are sensitive, such as passwords.",
 			},
 		},
@@ -84,7 +84,7 @@ func connectorDelete(d *schema.ResourceData, meta interface{}) error {
 		Name: name,
 	}
 
-	fmt.Printf("[INFO] Deleing the connector %s\n", name)
+	fmt.Printf("[INFO] Deleting the connector %s\n", name)
 
 	_, err := c.DeleteConnector(req, true)
 	if err == nil {

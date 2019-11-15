@@ -6,15 +6,15 @@ resource "kafka-connect_connector" "sqlite-sink" {
   name = "sqlite-sink"
 
   config = {
-    "name"            = "test-sink"
+    "name"            = "sqlite-sink"
     "connector.class" = "io.confluent.connect.jdbc.JdbcSinkConnector"
-    "tasks.max"       = "1"
+    "tasks.max"       = 1
     "topics"          = "orders"
     "connection.url"  = "jdbc:sqlite:test.db"
     "auto.create"     = "true"
   }
 
   config_sensitive = {
-    "password" = "this-should-never-appear-unmasked"
+    "password" = "whooo-this-should-never-appear-unmasked"
   }
 }

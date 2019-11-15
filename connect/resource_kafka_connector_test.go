@@ -22,6 +22,10 @@ func TestAccConnectorConfigUpdate(t *testing.T) {
 				Config: testResourceConnector_updateConfig,
 				Check:  testResourceConnector_updateCheck,
 			},
+			/*{
+				Config: testResourceConnector_checkDoesNotLeakSensitiveConfig,
+				Check: testResourceConnector_checkDoesNotLeakSensitive,
+			},*/
 		},
 	})
 }
@@ -76,6 +80,22 @@ func testResourceConnector_updateCheck(s *terraform.State) error {
 	return nil
 }
 
+func testResourceConnector_checkDoesNotLeakSensitive(s *terraform.State) error {
+	fmt.Printf("[INFO] testing that sensitive fields do not leak into normal config.")
+	client := testProvider.Meta().(kc.Client)
+
+	c, err := client.GetConnector(kc.ConnectorRequest{Name: "sqlite-sink"})
+	if err != nil {
+		return err
+	}
+
+	if val, ok := c.Config["password"]; ok {
+		return fmt.Errorf("password field from sensitive config has leaked into normal config! the password field there is %s", val)
+	}
+
+	return nil
+}
+
 const testResourceConnector_initialConfig = `
 resource "kafka-connect_connector" "test" {
   name = "sqlite-sink"
@@ -102,6 +122,25 @@ resource "kafka-connect_connector" "test" {
     "topics"          = "orders"
     "connection.url"  = "jdbc:sqlite:test.db"
     "auto.create"     = "true"
+  }
+}
+`
+
+const testResourceConnector_checkDoesNotLeakSensitiveConfig = `
+resource "kafka-connect_connector" "test" {
+  name = "sqlite-sink"
+
+  config = {
+    "name"            = "sqlite-sink"
+    "connector.class" = "io.confluent.connect.jdbc.JdbcSinkConnector"
+    "tasks.max"       = 1
+    "topics"          = "orders"
+    "connection.url"  = "jdbc:sqlite:test.db"
+    "auto.create"     = "true"
+  }
+
+  config_sensitive = {
+    "password" = "this-should-never-appear-unmasked"
   }
 }
 `
