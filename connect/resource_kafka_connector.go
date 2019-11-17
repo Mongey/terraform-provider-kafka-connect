@@ -42,8 +42,6 @@ func kafkaConnectorResource() *schema.Resource {
 	}
 }
 
-var sensitiveCache = map[string]string{}
-
 func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 	c := meta.(kc.Client)
 	name := nameFromRD(d)
@@ -137,14 +135,15 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 func connectorRead(d *schema.ResourceData, meta interface{}) error {
 	c := meta.(kc.Client)
 
+	config, sensitiveCache := configFromRD(d)
 	name := d.Get("name").(string)
 	req := kc.ConnectorRequest{
 		Name: name,
 	}
 
 	log.Printf("[INFO] Looking for %s", name)
-	log.Printf("[INFO] My old configuration values are: %v", d.Get("configuration"))
-	log.Printf("[INFO] My old config_sensitive values are: %v", d.Get("config_sensitive"))
+	log.Printf("[INFO] My old configuration values are: %v", config)
+	log.Printf("[INFO] My old config_sensitive values are: %v", sensitiveCache)
 	conn, err := c.GetConnector(req)
 
 	newConfFiltered := removeSecondKeysFromFirst(conn.Config, sensitiveCache)
@@ -164,7 +163,6 @@ func connectorRead(d *schema.ResourceData, meta interface{}) error {
 func configFromRD(d *schema.ResourceData) (map[string]string, map[string]string) {
 	cfg := mapFromRD(d, "configuration")
 	scfg := mapFromRD(d, "config_sensitive")
-	sensitiveCache = scfg
 	config := combineMaps(cfg, scfg)
 	return config, scfg
 }
