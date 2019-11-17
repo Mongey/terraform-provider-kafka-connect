@@ -24,7 +24,7 @@ func TestAccConnectorConfigUpdate(t *testing.T) {
 			},
 			{
 				Config: testResourceConnector_checkDoesNotLeakSensitiveConfig,
-				Check: testResourceConnector_checkDoesNotLeakSensitive,
+				Check:  testResourceConnector_checkDoesNotLeakSensitive,
 			},
 		},
 	})

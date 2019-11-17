@@ -32,10 +32,10 @@ func kafkaConnectorResource() *schema.Resource {
 				Description: "A map of string k/v attributes.",
 			},
 			"config_sensitive": {
-				Type: schema.TypeMap,
-				Optional: true,
-				ForceNew: false,
-				Sensitive: true,
+				Type:        schema.TypeMap,
+				Optional:    true,
+				ForceNew:    false,
+				Sensitive:   true,
 				Description: "A map of string k/v attributes which are sensitive, such as passwords.",
 			},
 		},
@@ -66,7 +66,6 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 	connectorResponse, err := c.CreateConnector(req, true)
 
 	fmt.Printf("[INFO] Created the connector %v\n", connectorResponse)
-
 
 	if err == nil {
 		newConfFiltered := removeSecondKeysFromFirst(connectorResponse.Config, sensitiveCache)
@@ -102,7 +101,6 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 	name := nameFromRD(d)
 
 	config, sensitiveCache := configFromRD(d)
-
 
 	log.Printf("[INFO] Requesting update to connector %v", name)
 	req := kc.CreateConnectorRequest{
@@ -141,11 +139,11 @@ func connectorRead(d *schema.ResourceData, meta interface{}) error {
 	//log.Printf("[INFO] Current local config_sensitive values are: %v", sensitiveCache)
 	conn, err := c.GetConnector(req)
 
-	// we do not want the sensitive values to appear in the non-masked 'config' field
-	// use cached sensitive values to get the correct keys to remove from the newly read config
-	newConfFiltered := removeSecondKeysFromFirst(conn.Config, sensitiveCache)
 
 	if err == nil {
+		// we do not want the sensitive values to appear in the non-masked 'config' field
+		// use cached sensitive values to get the correct keys to remove from the newly read config
+		newConfFiltered := removeSecondKeysFromFirst(conn.Config, sensitiveCache)
 		d.Set("config_sensitive", sensitiveCache)
 		d.Set("config", newConfFiltered)
 		log.Printf("[INFO] Local config nonsensitive data updated to %v", newConfFiltered)
