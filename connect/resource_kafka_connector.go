@@ -42,9 +42,13 @@ func kafkaConnectorResource() *schema.Resource {
 	}
 }
 
+var sensitiveCache = map[string]string{}
+
 func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 	c := meta.(kc.Client)
 	name := nameFromRD(d)
+
+	sensitiveCache = mapFromRD(d, "config_sensitive")
 	config := configFromRD(d)
 	if !kc.TryUntil(
 		func() bool {
@@ -63,10 +67,15 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	connectorResponse, err := c.CreateConnector(req, true)
+
 	fmt.Printf("[INFO] Created the connector %v\n", connectorResponse)
 
+
 	if err == nil {
+		newConfFiltered := removeSecondKeysFromFirst(connectorResponse.Config, sensitiveCache)
 		d.SetId(name)
+		d.Set("config_sensitive", sensitiveCache)
+		d.Set("config", newConfFiltered)
 	}
 
 	return err
@@ -98,6 +107,8 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 	c := meta.(kc.Client)
 
 	name := nameFromRD(d)
+
+	sensitiveCache = mapFromRD(d, "config_sensitive")
 	config := configFromRD(d)
 
 	req := kc.CreateConnectorRequest{
@@ -110,9 +121,13 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 	log.Printf("[INFO] Looking for %s", name)
 	conn, err := c.UpdateConnector(req, true)
 
+	newConfFiltered := removeSecondKeysFromFirst(conn.Config, sensitiveCache)
+
 	if err == nil {
-		log.Printf("[INFO] Config updated %v", conn.Config)
-		d.Set("config", conn.Config)
+		log.Printf("[INFO] Config updated %v", newConfFiltered)
+		log.Printf("[INFO] Config sensitive updated %v", sensitiveCache)
+		d.Set("config", newConfFiltered)
+		d.Set("config_sensitive", sensitiveCache)
 	}
 
 	return err
@@ -128,24 +143,50 @@ func connectorRead(d *schema.ResourceData, meta interface{}) error {
 	log.Printf("[INFO] Looking for %s", name)
 	conn, err := c.GetConnector(req)
 
+	newConfFiltered := removeSecondKeysFromFirst(conn.Config, sensitiveCache)
+
 	if err == nil {
 		log.Printf("[INFO] found the config %v", conn.Config)
-		d.Set("config", conn.Config)
+		d.Set("config_sensitive", sensitiveCache)
+		d.Set("config", newConfFiltered)
 	}
 
 	return err
 }
 
-func configFromRD(d *schema.ResourceData) map[string]string {
-	cfg := d.Get("config").(map[string]interface{})
-	scfg := d.Get("config_sensitive").(map[string]interface{})
-	config := make(map[string]string)
-	for k, v := range cfg {
-		config[k] = v.(string)
-	}
-	for k, v := range scfg {
-		config[k] = v.(string)
-	}
 
+func configFromRD(d *schema.ResourceData) map[string]string {
+	cfg := mapFromRD(d, "config")
+	scfg := mapFromRD(d, "config_sensitive")
+	sensitiveCache = scfg
+	config := combineMaps(cfg, scfg)
 	return config
+}
+
+func mapFromRD(d *schema.ResourceData, key string) map[string]string {
+	mapToBe := d.Get(key).(map[string]interface{})
+	realMap := make(map[string]string)
+	for k, v := range mapToBe {
+		realMap[k] = v.(string)
+	}
+	return realMap
+}
+
+// if there are duplicate keys this will always take the kv from second!!!
+func combineMaps(first map[string]string, second map[string]string) map[string]string {
+	union := make(map[string]string)
+	for k, v := range first {
+		union[k] = v
+	}
+	for k, v := range second {
+		union[k] = v
+	}
+	return union
+}
+
+func removeSecondKeysFromFirst(first map[string]string, second map[string]string) map[string]string {
+	for k := range second {
+		delete(first, k)
+	}
+	return first
 }
