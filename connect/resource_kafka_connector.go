@@ -25,7 +25,7 @@ func kafkaConnectorResource() *schema.Resource {
 				ForceNew:    true,
 				Description: "The name of the connector",
 			},
-			"configuration": {
+			"config": {
 				Type:        schema.TypeMap,
 				Optional:    true,
 				ForceNew:    false,
@@ -35,7 +35,7 @@ func kafkaConnectorResource() *schema.Resource {
 				Type: schema.TypeMap,
 				Optional: true,
 				ForceNew: false,
-				Sensitive: false,
+				Sensitive: true,
 				Description: "A map of string k/v attributes which are sensitive, such as passwords.",
 			},
 		},
@@ -78,10 +78,6 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 	return err
 }
 
-func nameFromRD(d *schema.ResourceData) string {
-	return d.Get("name").(string)
-}
-
 func connectorDelete(d *schema.ResourceData, meta interface{}) error {
 	c := meta.(kc.Client)
 
@@ -119,13 +115,12 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 	log.Printf("[INFO] Looking for %s", name)
 	conn, err := c.UpdateConnector(req, true)
 
-	newConfFiltered := removeSecondKeysFromFirst(conn.Config, sensitiveCache)
-
 	if err == nil {
-		log.Printf("[INFO] Full config received from update was %v", conn.Config)
-		log.Printf("[INFO] Configuration updated %v", newConfFiltered)
-		log.Printf("[INFO] Config sensitive updated %v", sensitiveCache)
-		d.Set("configuration", newConfFiltered)
+		newConfFiltered := removeSecondKeysFromFirst(conn.Config, sensitiveCache)
+		log.Printf("[INFO] Full config received from update is: %v", conn.Config)
+		log.Printf("[INFO] Local config nonsensitive updated to: %v", newConfFiltered)
+		//log.Printf("[INFO] Local config_sensitive updated to:  %v", sensitiveCache)
+		d.Set("config", newConfFiltered)
 		d.Set("config_sensitive", sensitiveCache)
 	}
 
@@ -141,30 +136,38 @@ func connectorRead(d *schema.ResourceData, meta interface{}) error {
 		Name: name,
 	}
 
-	log.Printf("[INFO] Looking for %s", name)
-	log.Printf("[INFO] My old configuration values are: %v", config)
-	log.Printf("[INFO] My old config_sensitive values are: %v", sensitiveCache)
+	log.Printf("[INFO] Attempting to read remote data for connector %s", name)
+	log.Printf("[INFO] Current local config nonsensitive values are: %v", config)
+	//log.Printf("[INFO] Current local config_sensitive values are: %v", sensitiveCache)
 	conn, err := c.GetConnector(req)
 
+	// we do not want the sensitive values to appear in the non-masked 'config' field
+	// use cached sensitive values to get the correct keys to remove from the newly read config
 	newConfFiltered := removeSecondKeysFromFirst(conn.Config, sensitiveCache)
 
 	if err == nil {
-		log.Printf("[INFO] found the config %v", conn.Config)
 		d.Set("config_sensitive", sensitiveCache)
-		d.Set("configuration", newConfFiltered)
-		log.Printf("[INFO] Set the new configuration to %v", newConfFiltered)
-		log.Printf("[INFO] Set the new config_sensitive to %v", sensitiveCache)
+		d.Set("config", newConfFiltered)
+		log.Printf("[INFO] Local config nonsensitive data updated to %v", newConfFiltered)
+		//log.Printf("[INFO] Local config_sensitive data updated to %v", sensitiveCache)
 	}
 
 	return err
 }
 
-
+// Returns a full config (inclusive of sensitive values) and a config of just the sensitive values
+// The first is intended to be passed to CreateConnectorRequest
+// The second is intended to preserve knowledge of which keys are sensitive information in the incoming
+// ConnectorResponse.Config
 func configFromRD(d *schema.ResourceData) (map[string]string, map[string]string) {
-	cfg := mapFromRD(d, "configuration")
+	cfg := mapFromRD(d, "config")
 	scfg := mapFromRD(d, "config_sensitive")
 	config := combineMaps(cfg, scfg)
 	return config, scfg
+}
+
+func nameFromRD(d *schema.ResourceData) string {
+	return d.Get("name").(string)
 }
 
 func mapFromRD(d *schema.ResourceData, key string) map[string]string {
