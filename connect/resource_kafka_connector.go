@@ -104,7 +104,7 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 	config, sensitiveCache := configFromRD(d)
 
 
-	log.Printf("Passing full config into request to Kafka Connect: %v", config)
+	log.Printf("[INFO] Requesting update to connector %v", name)
 	req := kc.CreateConnectorRequest{
 		ConnectorRequest: kc.ConnectorRequest{
 			Name: name,
@@ -117,7 +117,7 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 
 	if err == nil {
 		newConfFiltered := removeSecondKeysFromFirst(conn.Config, sensitiveCache)
-		log.Printf("[INFO] Full config received from update is: %v", conn.Config)
+		//log.Printf("[INFO] Full config received from update is: %v", conn.Config)
 		log.Printf("[INFO] Local config nonsensitive updated to: %v", newConfFiltered)
 		//log.Printf("[INFO] Local config_sensitive updated to:  %v", sensitiveCache)
 		d.Set("config", newConfFiltered)
