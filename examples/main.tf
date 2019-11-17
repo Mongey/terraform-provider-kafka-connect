@@ -5,7 +5,7 @@ provider "kafka-connect" {
 resource "kafka-connect_connector" "sqlite-sink" {
   name = "sqlite-sink"
 
-  config = {
+  configuration = {
     "name"            = "sqlite-sink"
     "connector.class" = "io.confluent.connect.jdbc.JdbcSinkConnector"
     "tasks.max"       = 1
@@ -16,5 +16,6 @@ resource "kafka-connect_connector" "sqlite-sink" {
 
   config_sensitive = {
     "password" = "whooo-this-should-never-appear-unmasked"
+    "mash" = "nice"
   }
 }

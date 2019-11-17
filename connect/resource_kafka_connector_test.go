@@ -22,10 +22,10 @@ func TestAccConnectorConfigUpdate(t *testing.T) {
 				Config: testResourceConnector_updateConfig,
 				Check:  testResourceConnector_updateCheck,
 			},
-			/*{
+			{
 				Config: testResourceConnector_checkDoesNotLeakSensitiveConfig,
 				Check: testResourceConnector_checkDoesNotLeakSensitive,
-			},*/
+			},
 		},
 	})
 }

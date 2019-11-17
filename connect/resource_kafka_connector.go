@@ -25,7 +25,7 @@ func kafkaConnectorResource() *schema.Resource {
 				ForceNew:    true,
 				Description: "The name of the connector",
 			},
-			"config": {
+			"configuration": {
 				Type:        schema.TypeMap,
 				Optional:    true,
 				ForceNew:    false,
@@ -48,8 +48,7 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 	c := meta.(kc.Client)
 	name := nameFromRD(d)
 
-	sensitiveCache = mapFromRD(d, "config_sensitive")
-	config := configFromRD(d)
+	config, sensitiveCache := configFromRD(d)
 	if !kc.TryUntil(
 		func() bool {
 			_, err := c.GetAll()
@@ -108,9 +107,10 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 
 	name := nameFromRD(d)
 
-	sensitiveCache = mapFromRD(d, "config_sensitive")
-	config := configFromRD(d)
+	config, sensitiveCache := configFromRD(d)
 
+
+	log.Printf("Passing full config into request to Kafka Connect: %v", config)
 	req := kc.CreateConnectorRequest{
 		ConnectorRequest: kc.ConnectorRequest{
 			Name: name,
@@ -124,9 +124,10 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 	newConfFiltered := removeSecondKeysFromFirst(conn.Config, sensitiveCache)
 
 	if err == nil {
-		log.Printf("[INFO] Config updated %v", newConfFiltered)
+		log.Printf("[INFO] Full config received from update was %v", conn.Config)
+		log.Printf("[INFO] Configuration updated %v", newConfFiltered)
 		log.Printf("[INFO] Config sensitive updated %v", sensitiveCache)
-		d.Set("config", newConfFiltered)
+		d.Set("configuration", newConfFiltered)
 		d.Set("config_sensitive", sensitiveCache)
 	}
 
@@ -140,7 +141,10 @@ func connectorRead(d *schema.ResourceData, meta interface{}) error {
 	req := kc.ConnectorRequest{
 		Name: name,
 	}
+
 	log.Printf("[INFO] Looking for %s", name)
+	log.Printf("[INFO] My old configuration values are: %v", d.Get("configuration"))
+	log.Printf("[INFO] My old config_sensitive values are: %v", d.Get("config_sensitive"))
 	conn, err := c.GetConnector(req)
 
 	newConfFiltered := removeSecondKeysFromFirst(conn.Config, sensitiveCache)
@@ -148,19 +152,21 @@ func connectorRead(d *schema.ResourceData, meta interface{}) error {
 	if err == nil {
 		log.Printf("[INFO] found the config %v", conn.Config)
 		d.Set("config_sensitive", sensitiveCache)
-		d.Set("config", newConfFiltered)
+		d.Set("configuration", newConfFiltered)
+		log.Printf("[INFO] Set the new configuration to %v", newConfFiltered)
+		log.Printf("[INFO] Set the new config_sensitive to %v", sensitiveCache)
 	}
 
 	return err
 }
 
 
-func configFromRD(d *schema.ResourceData) map[string]string {
-	cfg := mapFromRD(d, "config")
+func configFromRD(d *schema.ResourceData) (map[string]string, map[string]string) {
+	cfg := mapFromRD(d, "configuration")
 	scfg := mapFromRD(d, "config_sensitive")
 	sensitiveCache = scfg
 	config := combineMaps(cfg, scfg)
-	return config
+	return config, scfg
 }
 
 func mapFromRD(d *schema.ResourceData, key string) map[string]string {
