@@ -6,7 +6,6 @@ jobs:
       - image: circleci/golang:1.13
         environment:
           TEST_RESULTS: /tmp/test-results
-          GO111MODULE: "on"
       - image: confluentinc/cp-zookeeper:5.3.1
         environment:
           ZOOKEEPER_CLIENT_PORT: 2181
@@ -17,6 +16,7 @@ jobs:
           KAFKA_ZOOKEEPER_CONNECT: localhost:2181
           KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
           KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
       - image: confluentinc/cp-kafka-connect:5.3.1
         environment:
           CONNECT_BOOTSTRAP_SERVERS: PLAINTEXT://localhost:9092
