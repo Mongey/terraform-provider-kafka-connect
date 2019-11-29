@@ -7,17 +7,17 @@ jobs:
         environment:
           TEST_RESULTS: /tmp/test-results
           GO111MODULE: "on"
-      - image: confluentinc/cp-zookeeper:latest
+      - image: confluentinc/cp-zookeeper:5.3.1
         environment:
           ZOOKEEPER_CLIENT_PORT: 2181
           ZOOKEEPER_TICK_TIME: 2000
-      - image: confluentinc/cp-kafka:4.0.0-2
+      - image: confluentinc/cp-kafka:5.3.1
         environment:
           KAFKA_BROKER_ID: 1
           KAFKA_ZOOKEEPER_CONNECT: localhost:2181
           KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
           KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      - image: confluentinc/cp-kafka-connect:4.0.0-2
+      - image: confluentinc/cp-kafka-connect:5.3.1
         environment:
           CONNECT_BOOTSTRAP_SERVERS: PLAINTEXT://localhost:9092
           CONNECT_GROUP_ID: connect
