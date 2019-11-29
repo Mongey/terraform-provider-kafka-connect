@@ -11,7 +11,7 @@ your [terraform plugin directory][third-party-plugins] (typically `~/.terraform.
 
 ## Example
 
-Configure the provider directly, or set the Env variable `KAFKA_CONNECT_URL`
+Configure the provider directly, or set the ENV variable `KAFKA_CONNECT_URL`
 ```hcl
 provider "kafka-connect" {
   url = "http://localhost:8083"
