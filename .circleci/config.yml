@@ -1,4 +1,4 @@
-version: 2
+version: 2.1
 jobs:
   build:
     working_directory: /go/src/github.com/Mongey/terraform-provider-kafka-connect
@@ -64,3 +64,8 @@ jobs:
             make testacc| tee ${TEST_RESULTS}/go-test.out
       - store_test_results:
           path: /tmp/test-results
+
+workflows:
+  buld-and-test:
+    jobs:
+      - build
