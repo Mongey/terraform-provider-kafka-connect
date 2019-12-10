@@ -16,7 +16,7 @@ func kafkaConnectorResource() *schema.Resource {
 		Update: connectorUpdate,
 		Delete: connectorDelete,
 		Importer: &schema.ResourceImporter{
-			State: schema.ImportStatePassthrough,
+			State: setNameFromID,
 		},
 		Schema: map[string]*schema.Schema{
 			"name": {
@@ -32,14 +32,23 @@ func kafkaConnectorResource() *schema.Resource {
 				Description: "A map of string k/v attributes.",
 			},
 			"config_sensitive": {
-				Type: schema.TypeMap,
-				Optional: true,
-				ForceNew: false,
-				Sensitive: true,
+				Type:        schema.TypeMap,
+				Optional:    true,
+				ForceNew:    false,
+				Sensitive:   true,
 				Description: "A map of string k/v attributes which are sensitive, such as passwords.",
 			},
 		},
 	}
+}
+
+func setNameFromID(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
+
+	connectorName := d.Id()
+	log.Printf("Import connector with name: %s", connectorName)
+	d.Set("name", connectorName)
+
+	return []*schema.ResourceData{d}, nil
 }
 
 func connectorCreate(d *schema.ResourceData, meta interface{}) error {
@@ -69,7 +78,7 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 		d.SetId(name)
 	}
 
-	return err
+	return connectorRead(d, meta)
 }
 
 func nameFromRD(d *schema.ResourceData) string {
@@ -84,14 +93,14 @@ func connectorDelete(d *schema.ResourceData, meta interface{}) error {
 		Name: name,
 	}
 
-	fmt.Printf("[INFO] Deleing the connector %s\n", name)
+	fmt.Printf("[INFO] Deleting the connector %s\n", name)
 
 	_, err := c.DeleteConnector(req, true)
 	if err == nil {
 		d.SetId("")
 	}
 
-	return err
+	return nil
 }
 
 func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
@@ -115,7 +124,7 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 		d.Set("config", conn.Config)
 	}
 
-	return err
+	return connectorRead(d, meta)
 }
 
 func connectorRead(d *schema.ResourceData, meta interface{}) error {
@@ -133,7 +142,7 @@ func connectorRead(d *schema.ResourceData, meta interface{}) error {
 		d.Set("config", conn.Config)
 	}
 
-	return err
+	return nil
 }
 
 func configFromRD(d *schema.ResourceData) map[string]string {

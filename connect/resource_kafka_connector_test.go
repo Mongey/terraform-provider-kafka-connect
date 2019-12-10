@@ -19,6 +19,12 @@ func TestAccConnectorConfigUpdate(t *testing.T) {
 				Check:  testResourceConnector_initialCheck,
 			},
 			{
+				Config:            testResourceConnector_initialConfig,
+				ResourceName:      "kafka-connect_connector.test",
+				ImportStateVerify: true,
+				ImportState:       true,
+			},
+			{
 				Config: testResourceConnector_updateConfig,
 				Check:  testResourceConnector_updateCheck,
 			},
