@@ -10,7 +10,7 @@ import (
 
 func Provider() terraform.ResourceProvider {
 	log.Printf("[INFO] Creating Provider")
-	return &schema.Provider{
+	provider := schema.Provider{
 		Schema: map[string]*schema.Schema{
 			"url": {
 				Type:        schema.TypeString,
@@ -23,6 +23,8 @@ func Provider() terraform.ResourceProvider {
 			"kafka-connect_connector": kafkaConnectorResource(),
 		},
 	}
+	log.Printf("[INFO] Created provider: %v", provider)
+	return &provider
 }
 
 func providerConfigure(d *schema.ResourceData) (interface{}, error) {

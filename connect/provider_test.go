@@ -28,6 +28,6 @@ func testAccPreCheck(t *testing.T) {
 	client := testProvider.Meta()
 	log.Printf("[INFO] Checking KafkaConnect client")
 	if client == nil {
-		//t.Fatal("No client")
+		t.Fatal("No client")
 	}
 }

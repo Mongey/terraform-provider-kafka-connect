@@ -54,7 +54,8 @@ func setNameFromID(d *schema.ResourceData, meta interface{}) ([]*schema.Resource
 func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 	c := meta.(kc.Client)
 	name := nameFromRD(d)
-	config := configFromRD(d)
+
+	config, sensitiveCache := configFromRD(d)
 	if !kc.TryUntil(
 		func() bool {
 			_, err := c.GetAll()
@@ -72,17 +73,17 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	connectorResponse, err := c.CreateConnector(req, true)
+
 	fmt.Printf("[INFO] Created the connector %v\n", connectorResponse)
 
 	if err == nil {
+		newConfFiltered := removeSecondKeysFromFirst(connectorResponse.Config, sensitiveCache)
 		d.SetId(name)
+		d.Set("config_sensitive", sensitiveCache)
+		d.Set("config", newConfFiltered)
 	}
 
 	return connectorRead(d, meta)
-}
-
-func nameFromRD(d *schema.ResourceData) string {
-	return d.Get("name").(string)
 }
 
 func connectorDelete(d *schema.ResourceData, meta interface{}) error {
@@ -107,8 +108,10 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 	c := meta.(kc.Client)
 
 	name := nameFromRD(d)
-	config := configFromRD(d)
 
+	config, sensitiveCache := configFromRD(d)
+
+	log.Printf("[INFO] Requesting update to connector %v", name)
 	req := kc.CreateConnectorRequest{
 		ConnectorRequest: kc.ConnectorRequest{
 			Name: name,
@@ -120,8 +123,12 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 	conn, err := c.UpdateConnector(req, true)
 
 	if err == nil {
-		log.Printf("[INFO] Config updated %v", conn.Config)
-		d.Set("config", conn.Config)
+		newConfFiltered := removeSecondKeysFromFirst(conn.Config, sensitiveCache)
+		//log.Printf("[INFO] Full config received from update is: %v", conn.Config)
+		log.Printf("[INFO] Local config nonsensitive updated to: %v", newConfFiltered)
+		//log.Printf("[INFO] Local config_sensitive updated to:  %v", sensitiveCache)
+		d.Set("config", newConfFiltered)
+		d.Set("config_sensitive", sensitiveCache)
 	}
 
 	return connectorRead(d, meta)
@@ -130,31 +137,70 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 func connectorRead(d *schema.ResourceData, meta interface{}) error {
 	c := meta.(kc.Client)
 
+	config, sensitiveCache := configFromRD(d)
 	name := d.Get("name").(string)
 	req := kc.ConnectorRequest{
 		Name: name,
 	}
-	log.Printf("[INFO] Looking for %s", name)
+
+	log.Printf("[INFO] Attempting to read remote data for connector %s", name)
+	log.Printf("[INFO] Current local config nonsensitive values are: %v", config)
+	//log.Printf("[INFO] Current local config_sensitive values are: %v", sensitiveCache)
 	conn, err := c.GetConnector(req)
 
+
 	if err == nil {
-		log.Printf("[INFO] found the config %v", conn.Config)
-		d.Set("config", conn.Config)
+		// we do not want the sensitive values to appear in the non-masked 'config' field
+		// use cached sensitive values to get the correct keys to remove from the newly read config
+		newConfFiltered := removeSecondKeysFromFirst(conn.Config, sensitiveCache)
+		d.Set("config_sensitive", sensitiveCache)
+		d.Set("config", newConfFiltered)
+		log.Printf("[INFO] Local config nonsensitive data updated to %v", newConfFiltered)
+		//log.Printf("[INFO] Local config_sensitive data updated to %v", sensitiveCache)
 	}
 
 	return nil
 }
 
-func configFromRD(d *schema.ResourceData) map[string]string {
-	cfg := d.Get("config").(map[string]interface{})
-	scfg := d.Get("config_sensitive").(map[string]interface{})
-	config := make(map[string]string)
-	for k, v := range cfg {
-		config[k] = v.(string)
-	}
-	for k, v := range scfg {
-		config[k] = v.(string)
-	}
+// Returns a full config (inclusive of sensitive values) and a config of just the sensitive values
+// The first is intended to be passed to CreateConnectorRequest
+// The second is intended to preserve knowledge of which keys are sensitive information in the incoming
+// ConnectorResponse.Config
+func configFromRD(d *schema.ResourceData) (map[string]string, map[string]string) {
+	cfg := mapFromRD(d, "config")
+	scfg := mapFromRD(d, "config_sensitive")
+	config := combineMaps(cfg, scfg)
+	return config, scfg
+}
 
-	return config
+func nameFromRD(d *schema.ResourceData) string {
+	return d.Get("name").(string)
+}
+
+func mapFromRD(d *schema.ResourceData, key string) map[string]string {
+	mapToBe := d.Get(key).(map[string]interface{})
+	realMap := make(map[string]string)
+	for k, v := range mapToBe {
+		realMap[k] = v.(string)
+	}
+	return realMap
+}
+
+// if there are duplicate keys this will always take the kv from second!!!
+func combineMaps(first map[string]string, second map[string]string) map[string]string {
+	union := make(map[string]string)
+	for k, v := range first {
+		union[k] = v
+	}
+	for k, v := range second {
+		union[k] = v
+	}
+	return union
+}
+
+func removeSecondKeysFromFirst(first map[string]string, second map[string]string) map[string]string {
+	for k := range second {
+		delete(first, k)
+	}
+	return first
 }
