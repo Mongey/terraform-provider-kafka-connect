@@ -1,7 +1,7 @@
 package connect
 
 import (
-	"log"
+	"os"
 	"testing"
 
 	"github.com/hashicorp/terraform/helper/schema"
@@ -25,9 +25,9 @@ func TestProvider(t *testing.T) {
 }
 
 func testAccPreCheck(t *testing.T) {
-	client := testProvider.Meta()
-	log.Printf("[INFO] Checking KafkaConnect client")
-	if client == nil {
-		t.Fatal("No client")
+	connectVar := "KAFKA_CONNECT_URL"
+	value := os.Getenv(connectVar)
+	if value == "" {
+		t.Fatalf("%s env var must be set", connectVar)
 	}
 }
