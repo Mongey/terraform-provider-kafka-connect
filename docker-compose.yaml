@@ -49,3 +49,14 @@ services:
       CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
       CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
       CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+  nginx:
+    image: xscys/nginx-sidecar-basic-auth
+    ports:
+      - 8087:8087
+    depends_on:
+      - kafka-connect
+    environment:
+      FORWARD_HOST: kafka-connect
+      FORWARD_PORT: 8083
+      BASIC_AUTH_USERNAME: testuser
+      BASIC_AUTH_PASSWORD: testpassword

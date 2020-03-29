@@ -49,7 +49,7 @@ func testResourceConnector_initialCheck(s *terraform.State) error {
 		return fmt.Errorf("id doesn't match name")
 	}
 
-	client := testProvider.Meta().(kc.Client)
+	client := testProvider.Meta().(kc.HighLevelClient)
 
 	c, err := client.GetConnector(kc.ConnectorRequest{Name: "sqlite-sink"})
 	if err != nil {
@@ -66,7 +66,7 @@ func testResourceConnector_initialCheck(s *terraform.State) error {
 }
 
 func testResourceConnector_updateCheck(s *terraform.State) error {
-	client := testProvider.Meta().(kc.Client)
+	client := testProvider.Meta().(kc.HighLevelClient)
 
 	c, err := client.GetConnector(kc.ConnectorRequest{Name: "sqlite-sink"})
 	if err != nil {

@@ -226,6 +226,8 @@ github.com/mitchellh/panicwrap v0.0.0-20190213213626-17011010aaa4/go.mod h1:YYMf
 github.com/mitchellh/prefixedio v0.0.0-20190213213902-5733675afd51/go.mod h1:kB1naBgV9ORnkiTVeyJOI1DavaJkG4oNIq0Af6ZVKUo=
 github.com/mitchellh/reflectwalk v1.0.0 h1:9D+8oIskB4VJBN5SFlmc27fSlIBZaov1Wpk/IfikLNY=
 github.com/mitchellh/reflectwalk v1.0.0/go.mod h1:mSTlrgnPZtwu0c4WaC2kGObEpuNDbx0jmZXqmk4esnw=
+github.com/mmajis/go-kafka-connect v0.0.0-20200328184024-6284b2164d53 h1:Yk+eTGgUgsl3mdjSeEEQ0R5pP/4ytJ7gK/1JY/J1BV8=
+github.com/mmajis/go-kafka-connect v0.0.0-20200328184024-6284b2164d53/go.mod h1:qmte3Nxjt2qkpVCRCzqKmD5HVqHolDYSiJ+I3dYf2wo=
 github.com/neelance/astrewrite v0.0.0-20160511093645-99348263ae86/go.mod h1:kHJEU3ofeGjhHklVoIGuVj85JJwZ6kWPaJwCIxgnFmo=
 github.com/neelance/sourcemap v0.0.0-20151028013722-8c68805598ab/go.mod h1:Qr6/a/Q4r9LP1IltGz7tA7iOK1WonHEYhu1HRBA7ZiM=
 github.com/nu7hatch/gouuid v0.0.0-20131221200532-179d4d0c4d8d/go.mod h1:YUTz3bUH2ZwIWBy3CJBeOBEugqcmXREj14T+iG/4k4U=
@@ -252,6 +254,8 @@ github.com/ricardo-ch/go-kafka-connect v0.0.0-20180209135343-132b7b7ad380 h1:aNt
 github.com/ricardo-ch/go-kafka-connect v0.0.0-20180209135343-132b7b7ad380/go.mod h1:1wqdL63J2nVaqWpJuc1SH1nc+yuEYZrYI6JpxGhY3F4=
 github.com/ricardo-ch/go-kafka-connect v0.0.0-20190603085745-132b7b7ad380a6c860fecc0ca9b0a2af9bf45471 h1:72zdRhATkqj0AF2EgQpXK3rL77+hGy7rGNmzHNDXB7U=
 github.com/ricardo-ch/go-kafka-connect v0.0.0-20190603085745-132b7b7ad380a6c860fecc0ca9b0a2af9bf45471/go.mod h1:1wqdL63J2nVaqWpJuc1SH1nc+yuEYZrYI6JpxGhY3F4=
+github.com/ricardo-ch/go-kafka-connect v0.0.0-20190603085745-7ed69492c725 h1:GEYixMvGK8NsbWtTe+pMpYeqA7taxTWRTuurKmesv3M=
+github.com/ricardo-ch/go-kafka-connect v0.0.0-20190603085745-7ed69492c725/go.mod h1:1wqdL63J2nVaqWpJuc1SH1nc+yuEYZrYI6JpxGhY3F4=
 github.com/russross/blackfriday v1.5.2/go.mod h1:JO/DiYxRf+HjHt06OyowR9PTA263kcR/rfWxYHBV53g=
 github.com/satori/go.uuid v1.2.0/go.mod h1:dA0hQrYB0VpLJoorglMZABFdXlWrHn1NEOzdhQKdks0=
 github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529/go.mod h1:DxrIzT+xaE7yg65j358z/aeFdxmN0P9QXhEzd20vsDc=
@@ -337,6 +341,7 @@ golang.org/x/net v0.0.0-20181029044818-c44066c5c816/go.mod h1:mL1N/T3taQHkDXs73r
 golang.org/x/net v0.0.0-20181106065722-10aee1819953/go.mod h1:mL1N/T3taQHkDXs73rZJwtUhF3w3ftmwwsq0BUmARs4=
 golang.org/x/net v0.0.0-20181114220301-adae6a3d119a/go.mod h1:mL1N/T3taQHkDXs73rZJwtUhF3w3ftmwwsq0BUmARs4=
 golang.org/x/net v0.0.0-20181129055619-fae4c4e3ad76/go.mod h1:mL1N/T3taQHkDXs73rZJwtUhF3w3ftmwwsq0BUmARs4=
+golang.org/x/net v0.0.0-20181220203305-927f97764cc3/go.mod h1:mL1N/T3taQHkDXs73rZJwtUhF3w3ftmwwsq0BUmARs4=
 golang.org/x/net v0.0.0-20190108225652-1e06a53dbb7e/go.mod h1:mL1N/T3taQHkDXs73rZJwtUhF3w3ftmwwsq0BUmARs4=
 golang.org/x/net v0.0.0-20190213061140-3a22650c66bd/go.mod h1:mL1N/T3taQHkDXs73rZJwtUhF3w3ftmwwsq0BUmARs4=
 golang.org/x/net v0.0.0-20190311183353-d8887717615a/go.mod h1:t9HGtf8HONx5eT2rtn7q6eTqICYqUVnKs3thJo3Qplg=
@@ -404,6 +409,8 @@ gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127/go.mod h1:Co6ibVJAznAaIkqp8
 gopkg.in/cheggaaa/pb.v1 v1.0.27/go.mod h1:V/YB90LKu/1FcN3WVnfiiE5oMCibMjukxqG/qStrOgw=
 gopkg.in/fsnotify.v1 v1.4.7/go.mod h1:Tz8NjZHkW78fSQdbUxIjBTcgA1z1m8ZHf0WmKUhAMys=
 gopkg.in/inf.v0 v0.9.1/go.mod h1:cWUDdTG/fYaXco+Dcufb5Vnc6Gp2YChqWtbxRZE0mXw=
+gopkg.in/resty.v1 v1.12.0 h1:CuXP0Pjfw9rOuY6EP+UvtNvt5DSqHpIxILZKT/quCZI=
+gopkg.in/resty.v1 v1.12.0/go.mod h1:mDo4pnntr5jdWRML875a/NmxYqAlA73dVijT2AXvQQo=
 gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7/go.mod h1:dt/ZhP58zS4L8KSrWDmTeBkI65Dw0HsyUHuEVlX15mw=
 gopkg.in/yaml.v2 v2.2.1/go.mod h1:hI93XBmqTisBFMUTm0b8Fm+jr3Dg1NNxqwp+5A1VGuI=
 gopkg.in/yaml.v2 v2.2.2/go.mod h1:hI93XBmqTisBFMUTm0b8Fm+jr3Dg1NNxqwp+5A1VGuI=
