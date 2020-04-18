@@ -15,6 +15,8 @@ Configure the provider directly, or set the ENV variable `KAFKA_CONNECT_URL`
 ```hcl
 provider "kafka-connect" {
   url = "http://localhost:8083"
+  basic_auth_username = "user" # Optional
+  basic_auth_password = "password" # Optional
 }
 
 resource "kafka-connect_connector" "sqlite-sink" {
@@ -35,6 +37,22 @@ resource "kafka-connect_connector" "sqlite-sink" {
   }
 }
 ```
+
+## Provider Properties
+
+| Property              | Type   | Example                 | Alternative environment variable name |
+|-----------------------|--------|-------------------------|---------------------------------------|
+| `url`                 | URL    | "http://localhost:8083" | `KAFKA_CONNECT_URL`                   |
+| `basic_auth_username` | String | "user"                  | `KAFKA_CONNECT_BASIC_AUTH_USERNAME`   |
+| `basic_auth_password` | String | "password"              | `KAFKA_CONNECT_BASIC_AUTH_PASSWORD`   |
+
+## Resource Properties
+
+| Property              | Type      | Description                                                          |
+|-----------------------|-----------|----------------------------------------------------------------------|
+| `name`                | String    | Connector name                                                       |
+| `config`              | HCL Block | Connector configuration                                              |
+| `config_sensitive`    | HCL Block | Sensitive connector configuration. Will be masked in output.         |
 
 ## Developing
 

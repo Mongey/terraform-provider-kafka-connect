@@ -3,7 +3,6 @@ package connect
 import (
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/hashicorp/terraform/helper/schema"
 	kc "github.com/ricardo-ch/go-kafka-connect/lib/connectors"
@@ -52,19 +51,11 @@ func setNameFromID(d *schema.ResourceData, meta interface{}) ([]*schema.Resource
 }
 
 func connectorCreate(d *schema.ResourceData, meta interface{}) error {
-	c := meta.(kc.Client)
+	c := meta.(kc.HighLevelClient)
 	name := nameFromRD(d)
 
 	config, sensitiveCache := configFromRD(d)
-	if !kc.TryUntil(
-		func() bool {
-			_, err := c.GetAll()
-			return err == nil
-		},
-		5*time.Minute,
-	) {
-		return fmt.Errorf("timed out trying to connect to kafka-connect server at %s", c.URL)
-	}
+
 	req := kc.CreateConnectorRequest{
 		ConnectorRequest: kc.ConnectorRequest{
 			Name: name,
@@ -87,7 +78,7 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 }
 
 func connectorDelete(d *schema.ResourceData, meta interface{}) error {
-	c := meta.(kc.Client)
+	c := meta.(kc.HighLevelClient)
 
 	name := nameFromRD(d)
 	req := kc.ConnectorRequest{
@@ -105,7 +96,7 @@ func connectorDelete(d *schema.ResourceData, meta interface{}) error {
 }
 
 func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
-	c := meta.(kc.Client)
+	c := meta.(kc.HighLevelClient)
 
 	name := nameFromRD(d)
 
@@ -135,7 +126,7 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 }
 
 func connectorRead(d *schema.ResourceData, meta interface{}) error {
-	c := meta.(kc.Client)
+	c := meta.(kc.HighLevelClient)
 
 	config, sensitiveCache := configFromRD(d)
 	name := d.Get("name").(string)
@@ -166,7 +157,7 @@ func connectorRead(d *schema.ResourceData, meta interface{}) error {
 // The first is intended to be passed to CreateConnectorRequest
 // The second is intended to preserve knowledge of which keys are sensitive information in the incoming
 // ConnectorResponse.Config
-func configFromRD(d *schema.ResourceData) (map[string]string, map[string]string) {
+func configFromRD(d *schema.ResourceData) (map[string]interface{}, map[string]interface{}) {
 	cfg := mapFromRD(d, "config")
 	scfg := mapFromRD(d, "config_sensitive")
 	config := combineMaps(cfg, scfg)
@@ -177,18 +168,13 @@ func nameFromRD(d *schema.ResourceData) string {
 	return d.Get("name").(string)
 }
 
-func mapFromRD(d *schema.ResourceData, key string) map[string]string {
-	mapToBe := d.Get(key).(map[string]interface{})
-	realMap := make(map[string]string)
-	for k, v := range mapToBe {
-		realMap[k] = v.(string)
-	}
-	return realMap
+func mapFromRD(d *schema.ResourceData, key string) map[string]interface{} {
+	return d.Get(key).(map[string]interface{})
 }
 
 // if there are duplicate keys this will always take the kv from second!!!
-func combineMaps(first map[string]string, second map[string]string) map[string]string {
-	union := make(map[string]string)
+func combineMaps(first map[string]interface{}, second map[string]interface{}) map[string]interface{} {
+	union := make(map[string]interface{})
 	for k, v := range first {
 		union[k] = v
 	}
@@ -198,7 +184,7 @@ func combineMaps(first map[string]string, second map[string]string) map[string]s
 	return union
 }
 
-func removeSecondKeysFromFirst(first map[string]string, second map[string]string) map[string]string {
+func removeSecondKeysFromFirst(first map[string]interface{}, second map[string]interface{}) map[string]interface{} {
 	for k := range second {
 		delete(first, k)
 	}
