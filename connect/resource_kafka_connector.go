@@ -74,6 +74,10 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 		d.Set("config", newConfFiltered)
 	}
 
+	if err != nil {
+		return err
+	}
+
 	return connectorRead(d, meta)
 }
 
@@ -138,7 +142,6 @@ func connectorRead(d *schema.ResourceData, meta interface{}) error {
 	log.Printf("[INFO] Current local config nonsensitive values are: %v", config)
 	//log.Printf("[INFO] Current local config_sensitive values are: %v", sensitiveCache)
 	conn, err := c.GetConnector(req)
-
 
 	if err == nil {
 		// we do not want the sensitive values to appear in the non-masked 'config' field
