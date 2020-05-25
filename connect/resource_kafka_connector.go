@@ -126,6 +126,10 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 		d.Set("config_sensitive", sensitiveCache)
 	}
 
+	if err != nil {
+		return err
+	}
+
 	return connectorRead(d, meta)
 }
 
