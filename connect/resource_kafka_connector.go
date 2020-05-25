@@ -1,6 +1,7 @@
 package connect
 
 import (
+	"errors"
 	"fmt"
 	"log"
 
@@ -55,6 +56,11 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 	name := nameFromRD(d)
 
 	config, sensitiveCache := configFromRD(d)
+	if n, ok := config["name"]; ok && n != name {
+		return errors.New("config.name must be identical to the resource name")
+	} else if !ok {
+		return errors.New("config.name is the mandatory field indentical to the resource name")
+	}
 
 	req := kc.CreateConnectorRequest{
 		ConnectorRequest: kc.ConnectorRequest{
@@ -105,6 +111,11 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 	name := nameFromRD(d)
 
 	config, sensitiveCache := configFromRD(d)
+	if n, ok := config["name"]; ok && n != name {
+		return errors.New("config.name must be identical to the resource name")
+	} else if !ok {
+		return errors.New("config.name is the mandatory field indentical to the resource name")
+	}
 
 	log.Printf("[INFO] Requesting update to connector %v", name)
 	req := kc.CreateConnectorRequest{
