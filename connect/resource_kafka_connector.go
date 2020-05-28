@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/hashicorp/terraform/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	kc "github.com/ricardo-ch/go-kafka-connect/lib/connectors"
 )
 
