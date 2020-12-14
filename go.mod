@@ -4,7 +4,7 @@ go 1.12
 
 require (
 	bou.ke/monkey v1.0.2 // indirect
-	github.com/hashicorp/terraform-plugin-sdk v1.16.0
+	github.com/hashicorp/terraform-plugin-sdk/v2 v2.0.3
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/ricardo-ch/go-kafka-connect v0.0.0-20200928094249-af7817721cb5
 )
