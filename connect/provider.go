@@ -3,12 +3,11 @@ package connect
 import (
 	"log"
 
-	"github.com/hashicorp/terraform/helper/schema"
-	"github.com/hashicorp/terraform/terraform"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	kc "github.com/ricardo-ch/go-kafka-connect/lib/connectors"
 )
 
-func Provider() terraform.ResourceProvider {
+func Provider() *schema.Provider {
 	log.Printf("[INFO] Creating Provider")
 	provider := schema.Provider{
 		Schema: map[string]*schema.Schema{
