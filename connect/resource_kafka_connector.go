@@ -158,15 +158,17 @@ func connectorRead(d *schema.ResourceData, meta interface{}) error {
 	//log.Printf("[INFO] Current local config_sensitive values are: %v", sensitiveCache)
 	conn, err := c.GetConnector(req)
 
-	if err == nil {
-		// we do not want the sensitive values to appear in the non-masked 'config' field
-		// use cached sensitive values to get the correct keys to remove from the newly read config
-		newConfFiltered := removeSecondKeysFromFirst(conn.Config, sensitiveCache)
-		d.Set("config_sensitive", sensitiveCache)
-		d.Set("config", newConfFiltered)
-		log.Printf("[INFO] Local config nonsensitive data updated to %v", newConfFiltered)
-		//log.Printf("[INFO] Local config_sensitive data updated to %v", sensitiveCache)
+	if err != nil {
+		return err
 	}
+
+	// we do not want the sensitive values to appear in the non-masked 'config' field
+	// use cached sensitive values to get the correct keys to remove from the newly read config
+	newConfFiltered := removeSecondKeysFromFirst(conn.Config, sensitiveCache)
+	d.Set("config_sensitive", sensitiveCache)
+	d.Set("config", newConfFiltered)
+	log.Printf("[INFO] Local config nonsensitive data updated to %v", newConfFiltered)
+	//log.Printf("[INFO] Local config_sensitive data updated to %v", sensitiveCache)
 
 	return nil
 }
