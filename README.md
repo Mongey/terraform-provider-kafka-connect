@@ -1,5 +1,5 @@
 # `terraform-plugin-kafka-connect`
-[![CircleCI](https://circleci.com/gh/Mongey/terraform-provider-kafka-connect.svg?style=svg)](https://circleci.com/gh/Mongey/terraform-provider-kafka-connect)
+[![test](https://github.com/Mongey/terraform-provider-kafka-connect/actions/workflows/test.yml/badge.svg)](https://github.com/Mongey/terraform-provider-kafka-connect/actions/workflows/test.yml)
 
 A [Terraform][1] plugin for managing [Apache Kafka Connect][2].
 
