@@ -29,8 +29,9 @@ checksum:
 signs:
   - artifacts: checksum
     args:
-      - "--local-user"
-      - "A29F60D591A974E20B5E90695C886ACC44EB17C0"
+      - "--batch"
+      - "-u"
+      - "{{ .Env.GPG_FINGERPRINT }}"
       - "--output"
       - "${signature}"
       - "--detach-sign"
