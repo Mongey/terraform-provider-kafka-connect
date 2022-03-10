@@ -45,6 +45,8 @@ resource "kafka-connect_connector" "sqlite-sink" {
 | `url`                 | URL    | "http://localhost:8083" | `KAFKA_CONNECT_URL`                   |
 | `basic_auth_username` | String | "user"                  | `KAFKA_CONNECT_BASIC_AUTH_USERNAME`   |
 | `basic_auth_password` | String | "password"              | `KAFKA_CONNECT_BASIC_AUTH_PASSWORD`   |
+| `tls_auth_crt`        | String | "certificate"           | `KAFKA_CONNECT_TLS_AUTH_CRT`          |
+| `tls_auth_key`        | String | "Key"                   | `KAFKA_CONNECT_TLS_AUTH_KEY`          |
 
 ## Resource Properties
 
