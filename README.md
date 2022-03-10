@@ -17,6 +17,10 @@ provider "kafka-connect" {
   url = "http://localhost:8083"
   basic_auth_username = "user" # Optional
   basic_auth_password = "password" # Optional
+  
+  # For TLS
+  tls_auth_crt = "/tmp/cert.pem" # Optional
+  tls_auth_key = "/tmp/key.pem " # Optional
 }
 
 resource "kafka-connect_connector" "sqlite-sink" {
