@@ -6,7 +6,7 @@ import (
 
 	r "github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	kc "github.com/ricardo-ch/go-kafka-connect/lib/connectors"
+	kc "github.com/ricardo-ch/go-kafka-connect/v3/lib/connectors"
 )
 
 func TestAccConnectorConfigUpdate(t *testing.T) {
