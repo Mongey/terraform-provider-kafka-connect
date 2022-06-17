@@ -40,11 +40,13 @@ resource "kafka-connect_connector" "sqlite-sink" {
 
 ## Provider Properties
 
-| Property              | Type   | Example                 | Alternative environment variable name |
-|-----------------------|--------|-------------------------|---------------------------------------|
-| `url`                 | URL    | "http://localhost:8083" | `KAFKA_CONNECT_URL`                   |
-| `basic_auth_username` | String | "user"                  | `KAFKA_CONNECT_BASIC_AUTH_USERNAME`   |
-| `basic_auth_password` | String | "password"              | `KAFKA_CONNECT_BASIC_AUTH_PASSWORD`   |
+| Property              | Type              | Example                 | Alternative environment variable name |
+|-----------------------|-------------------|-------------------------|---------------------------------------|
+| `url`                 | URL               | "http://localhost:8083" | `KAFKA_CONNECT_URL`                   |
+| `basic_auth_username` | String            | "user"                  | `KAFKA_CONNECT_BASIC_AUTH_USERNAME`   |
+| `basic_auth_password` | String            | "password"              | `KAFKA_CONNECT_BASIC_AUTH_PASSWORD`   |
+| `bearer_token`        | String            | "27A43420FCFF497498B3"  | `KAFKA_CONNECT_BEARER_TOKEN`          |
+| `extra_headers`       | Map[String]String | {foo = "bar"}           | N/A                                   |
 
 ## Resource Properties
 

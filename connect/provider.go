@@ -1,9 +1,13 @@
 package connect
 
 import (
+	"context"
+	"fmt"
 	"log"
 
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+
 	kc "github.com/ricardo-ch/go-kafka-connect/v3/lib/connectors"
 )
 
@@ -26,8 +30,22 @@ func Provider() *schema.Provider {
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("KAFKA_CONNECT_BASIC_AUTH_PASSWORD", ""),
 			},
+			"bearer_token": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("KAFKA_CONNECT_BEARER_TOKEN", ""),
+			},
+			"extra_headers": {
+				Type:        schema.TypeMap,
+				Elem:        &schema.Schema{
+					Type: schema.TypeString,
+				},
+				Optional:    true,
+				// No DefaultFunc here to read from the env on account of this issue:
+				// https://github.com/hashicorp/terraform-plugin-sdk/issues/142
+			},
 		},
-		ConfigureFunc: providerConfigure,
+		ConfigureContextFunc: providerConfigure,
 		ResourcesMap: map[string]*schema.Resource{
 			"kafka-connect_connector": kafkaConnectorResource(),
 		},
@@ -36,7 +54,7 @@ func Provider() *schema.Provider {
 	return &provider
 }
 
-func providerConfigure(d *schema.ResourceData) (interface{}, error) {
+func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
 	log.Printf("[INFO] Initializing KafkaConnect client")
 	addr := d.Get("url").(string)
 	c := kc.NewClient(addr)
@@ -45,5 +63,17 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	if user != "" && pass != "" {
 		c.SetBasicAuth(user, pass)
 	}
+
+	if token := d.Get("bearer_token").(string); token != "" {
+		c.SetHeader("Authorization", fmt.Sprintf("Bearer %s", token))
+	}
+
+	extraHeaders := d.Get("extra_headers").(map[string]interface{})
+	if extraHeaders != nil {
+		for k, v := range extraHeaders {
+			c.SetHeader(k, v.(string))
+		}
+	}
+
 	return c, nil
 }
