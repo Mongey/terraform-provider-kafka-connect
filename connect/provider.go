@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"gopkg.in/resty.v1"
 
 	kc "github.com/ricardo-ch/go-kafka-connect/v3/lib/connectors"
 )
@@ -28,6 +29,11 @@ func Provider() *schema.Provider {
 				Type:        schema.TypeString,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("KAFKA_CONNECT_BASIC_AUTH_PASSWORD", ""),
+			},
+			"ssl_root_ca_file": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("KAFKA_CONNECT_SSL_ROOT_CA_FILE", ""),
 			},
 			"headers": {
 				Type: schema.TypeMap,
@@ -56,6 +62,11 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 	pass := d.Get("basic_auth_password").(string)
 	if user != "" && pass != "" {
 		c.SetBasicAuth(user, pass)
+	}
+
+	ssl_root_ca_file := d.Get("ssl_root_ca_file").(string)
+	if ssl_root_ca_file != "" {
+		resty.SetRootCertificate(ssl_root_ca_file)
 	}
 
 	headers := d.Get("headers").(map[string]interface{})
