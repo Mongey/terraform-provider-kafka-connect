@@ -44,7 +44,7 @@ jobs:
           trap "go-junit-report < go-test.out > go-test-report.xml" EXIT
           make testacc | tee go-test.out
       - name: Upload test results
-        uses: actions/upload-artifact@v2.3.1
+        uses: actions/upload-artifact@v4.0.0
         with:
           name: acc-test-results.xml
           path: go-test-report.xml
