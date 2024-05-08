@@ -53,6 +53,7 @@ resource "kafka-connect_connector" "sqlite-sink" {
 | `tls_auth_crt`        | String | "certificate"           | `KAFKA_CONNECT_TLS_AUTH_CRT`          |
 | `tls_auth_key`        | String | "Key"                   | `KAFKA_CONNECT_TLS_AUTH_KEY`          |
 | `tls_auth_is_insecure`| String | "Key"                   | `KAFKA_CONNECT_TLS_IS_INSECURE`       |
+| `headers`             | Map[String]String | {foo = "bar"}           | N/A                                   |
 
 ## Resource Properties
 

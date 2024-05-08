@@ -19,6 +19,8 @@ builds:
         goarch: '386'
       - goos: freebsd
         goarch: 'arm64'
+      - goos: windows
+        goarch: 'arm64'
 archives:
 - format: zip
   name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
