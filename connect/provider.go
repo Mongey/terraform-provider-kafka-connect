@@ -2,6 +2,7 @@ package connect
 
 import (
 	"context"
+ 	"crypto/tls"
 	"log"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -29,6 +30,20 @@ func Provider() *schema.Provider {
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("KAFKA_CONNECT_BASIC_AUTH_PASSWORD", ""),
 			},
+			"tls_auth_crt": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("KAFKA_CONNECT_TLS_AUTH_CRT", ""),
+			},
+			"tls_auth_key": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("KAFKA_CONNECT_TLS_AUTH_KEY", ""),
+			},
+			"tls_auth_is_insecure": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("KAFKA_CONNECT_TLS_IS_INSECURE", ""),
 			"headers": {
 				Type: schema.TypeMap,
 				Elem: &schema.Schema{
@@ -58,6 +73,23 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 		c.SetBasicAuth(user, pass)
 	}
 
+	crt := d.Get("tls_auth_crt").(string)
+	key := d.Get("tls_auth_key").(string)
+	is_insecure := d.Get("tls_auth_is_insecure").(bool)
+	log.Printf("[INFO]Cert : %s\nKey: %s", crt, key)
+	log.Printf("[INFO]SSl connection is insecure : %t", is_insecure)
+
+	if crt != "" && key != "" {
+		cert, err := tls.LoadX509KeyPair(crt, key)
+		if err != nil {
+			log.Fatalf("client: loadkeys: %s", err)
+		} else {
+			if is_insecure {
+				c.SetInsecureSSL()
+			}
+			c.SetClientCertificates(cert)	
+		}
+	}
 	headers := d.Get("headers").(map[string]interface{})
 	if headers != nil {
 		for k, v := range headers {
