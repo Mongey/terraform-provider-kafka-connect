@@ -2,7 +2,7 @@ package connect
 
 import (
 	"context"
- 	"crypto/tls"
+	"crypto/tls"
 	"log"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -44,6 +44,7 @@ func Provider() *schema.Provider {
 				Type:        schema.TypeBool,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("KAFKA_CONNECT_TLS_IS_INSECURE", ""),
+			},
 			"headers": {
 				Type: schema.TypeMap,
 				Elem: &schema.Schema{
@@ -87,7 +88,7 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 			if is_insecure {
 				c.SetInsecureSSL()
 			}
-			c.SetClientCertificates(cert)	
+			c.SetClientCertificates(cert)
 		}
 	}
 	headers := d.Get("headers").(map[string]interface{})
