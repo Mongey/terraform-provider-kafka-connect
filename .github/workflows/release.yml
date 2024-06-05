@@ -28,10 +28,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v4
+        uses: goreleaser/goreleaser-action@v6
         with:
-          version: latest
-          args: release --rm-dist
+          version: '~> v2'
+          args: release --clean
           key: ${{ secrets.YOUR_PRIVATE_KEY }}
         env:
           GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
