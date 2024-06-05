@@ -98,9 +98,11 @@ func connectorDelete(d *schema.ResourceData, meta interface{}) error {
 	fmt.Printf("[INFO] Deleting the connector %s\n", name)
 
 	_, err := c.DeleteConnector(req, true)
-	if err == nil {
-		d.SetId("")
+	if err != nil {
+		return err
 	}
+
+	d.SetId("")
 
 	return nil
 }
