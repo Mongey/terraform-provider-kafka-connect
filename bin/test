@@ -4,12 +4,12 @@ set -ex
 
 go build
 mv terraform-provider-kafka-connect ~/.terraform.d/plugins/terraform-provider-kafka-connect
-docker-compose down
-docker-compose up -d
+docker compose down
+docker compose up -d
 sleep 60
 cd examples
 rm -rf .terraform terraform.tfstate*
 terraform init
 terraform plan
 terraform apply -auto-approve
-docker-compose down
+docker compose down
