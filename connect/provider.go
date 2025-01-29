@@ -49,7 +49,7 @@ func Provider() *schema.Provider {
 			"tls_auth_is_insecure": {
 				Type:        schema.TypeBool,
 				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("KAFKA_CONNECT_TLS_IS_INSECURE", ""),
+				DefaultFunc: schema.EnvDefaultFunc("KAFKA_CONNECT_TLS_IS_INSECURE", false),
 			},
 			"headers": {
 				Type: schema.TypeMap,
