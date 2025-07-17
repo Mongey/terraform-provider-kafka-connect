@@ -2,17 +2,38 @@
 [![test](https://github.com/Mongey/terraform-provider-kafka-connect/actions/workflows/test.yml/badge.svg)](https://github.com/Mongey/terraform-provider-kafka-connect/actions/workflows/test.yml)
 
 A [Terraform][1] plugin for managing [Apache Kafka Connect][2].
-
 ## Installation
 
-Download and extract the [latest
-release](https://github.com/Mongey/terraform-provider-kafka-connect/releases/latest) to
-your [terraform plugin directory][third-party-plugins] (typically `~/.terraform.d/plugins/`)
+```hcl
+terraform {
+  required_providers {
+    kafka-connect = {
+      source  = "Mongey/kafka-connect"
+      version = "0.4.3"
+    }
+  }
+}
+```
+
+Or download and extract the [latest release](https://github.com/Mongey/terraform-provider-kafka-connect/releases/latest) to your [Terraform plugin directory][third-party-plugins] (typically `~/.terraform.d/plugins/`).
+
+This method is especially useful for offline environments where Terraform cannot automatically download the provider.
 
 ## Example
 
 Configure the provider directly, or set the ENV variable `KAFKA_CONNECT_URL`
 ```hcl
+
+terraform {
+  required_providers {
+    kafka-connect = {
+      source  = "Mongey/kafka-connect"
+      version = "0.4.3"
+    }
+  }
+}
+
+
 provider "kafka-connect" {
   url = "http://localhost:8083"
   basic_auth_username = "user" # Optional
