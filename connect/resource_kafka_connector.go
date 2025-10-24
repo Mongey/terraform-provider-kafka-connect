@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand"
+	"strings"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	kc "github.com/ricardo-ch/go-kafka-connect/v3/lib/connectors"
@@ -59,7 +62,7 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 	if n, ok := config["name"]; ok && n != name {
 		return errors.New("config.name must be identical to the resource name")
 	} else if !ok {
-		return errors.New("config.name is the mandatory field indentical to the resource name")
+		return errors.New("config.name is the mandatory field identical to the resource name")
 	}
 
 	req := kc.CreateConnectorRequest{
@@ -84,7 +87,7 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	return connectorRead(d, meta)
+	return readWithRetry(d, meta)
 }
 
 func connectorDelete(d *schema.ResourceData, meta interface{}) error {
@@ -97,7 +100,10 @@ func connectorDelete(d *schema.ResourceData, meta interface{}) error {
 
 	fmt.Printf("[INFO] Deleting the connector %s\n", name)
 
-	_, err := c.DeleteConnector(req, true)
+	err := withRebalanceRetry(func() error {
+		_, derr := c.DeleteConnector(req, true)
+		return derr
+	})
 	if err != nil {
 		return err
 	}
@@ -116,7 +122,7 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 	if n, ok := config["name"]; ok && n != name {
 		return errors.New("config.name must be identical to the resource name")
 	} else if !ok {
-		return errors.New("config.name is the mandatory field indentical to the resource name")
+		return errors.New("config.name is the mandatory field identical to the resource name")
 	}
 
 	log.Printf("[INFO] Requesting update to connector %v", name)
@@ -128,7 +134,12 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	log.Printf("[INFO] Looking for %s", name)
-	conn, err := c.UpdateConnector(req, true)
+	var conn kc.ConnectorResponse
+	var err error
+	err = withRebalanceRetry(func() error {
+		conn, err = c.UpdateConnector(req, true)
+		return err
+	})
 
 	if err == nil {
 		newConfFiltered := removeSecondKeysFromFirst(conn.Config, sensitiveCache)
@@ -143,7 +154,7 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	return connectorRead(d, meta)
+	return readWithRetry(d, meta)
 }
 
 func connectorRead(d *schema.ResourceData, meta interface{}) error {
@@ -173,6 +184,61 @@ func connectorRead(d *schema.ResourceData, meta interface{}) error {
 	//log.Printf("[INFO] Local config_sensitive data updated to %v", sensitiveCache)
 
 	return nil
+}
+
+// readWithRetry wraps the connectorRead function with retry functionality that
+// will attempt to read the connector again if a rebalance operation is
+// detected.
+func readWithRetry(d *schema.ResourceData, meta interface{}) error {
+	return withRebalanceRetry(func() error {
+		return connectorRead(d, meta)
+	})
+}
+
+// withRebalanceRetry executes the provided function with exponential backoff
+// retry logic specifically designed to handle Kafka Connect rebalancing
+// scenarios. Uses a fixed 60-second timeout which is appropriate for most
+// Kafka Connect deployments
+func withRebalanceRetry(fn func() error) error {
+	const rebalanceTimeout = 60 * time.Second
+	deadline := time.Now().Add(rebalanceTimeout)
+	backoff := 250 * time.Millisecond
+	const maxBackoff = 5 * time.Second
+	for {
+		err := fn()
+		if err == nil {
+			return nil
+		}
+		if !isRebalanceError(err) {
+			return err
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out waiting for Kafka Connect rebalance to finish: %w", err)
+		}
+		jitter := time.Duration(rand.Int63n(int64(backoff / 2)))
+		sleep := backoff + jitter
+		log.Printf("[INFO] Connect rebalance in progress; retrying after %.2fs ... (%v)", sleep.Seconds(), err)
+		time.Sleep(sleep)
+		if backoff < maxBackoff {
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
+	}
+}
+
+// isRebalanceError tries to detect the Connect 409 window and related exceptions.
+func isRebalanceError(err error) bool {
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "rebalance") ||
+		strings.Contains(msg, "rebalanceexpected") ||
+		strings.Contains(msg, "rebalance is expected") ||
+		strings.Contains(msg, "conflicting operation") {
+		return true
+	}
+
+	return strings.Contains(msg, "409")
 }
 
 // Returns a full config (inclusive of sensitive values) and a config of just the sensitive values
