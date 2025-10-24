@@ -1,6 +1,7 @@
 package connect
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
@@ -111,3 +112,53 @@ resource "kafka-connect_connector" "test" {
   }
 }
 `
+
+func TestIsRebalanceError(t *testing.T) {
+	rebalanceErr := errors.New("rebalance in progress")
+	if !isRebalanceError(rebalanceErr) {
+		t.Errorf("expected rebalance error to be detected")
+	}
+
+	normalErr := errors.New("connection timeout")
+	if isRebalanceError(normalErr) {
+		t.Errorf("expected normal error to not be detected as rebalance error")
+	}
+}
+
+func TestWithRebalanceRetry(t *testing.T) {
+	t.Run("successful operation after rebalance errors", func(t *testing.T) {
+		callCount := 0
+		operation := func() error {
+			callCount++
+			if callCount < 3 {
+				return errors.New("rebalance in progress")
+			}
+			return nil
+		}
+
+		err := withRebalanceRetry(operation)
+		if err != nil {
+			t.Errorf("expected no error, got: %v", err)
+		}
+		if callCount != 3 {
+			t.Errorf("expected 3 calls, got %d", callCount)
+		}
+	})
+
+	t.Run("non-rebalance error should not retry", func(t *testing.T) {
+		callCount := 0
+		expectedErr := errors.New("connection timeout")
+		operation := func() error {
+			callCount++
+			return expectedErr
+		}
+
+		err := withRebalanceRetry(operation)
+		if err != expectedErr {
+			t.Errorf("expected error %v, got: %v", expectedErr, err)
+		}
+		if callCount != 1 {
+			t.Errorf("expected 1 call, got %d", callCount)
+		}
+	})
+}
