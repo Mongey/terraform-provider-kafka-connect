@@ -21,6 +21,11 @@ func kafkaConnectorResource() *schema.Resource {
 		Importer: &schema.ResourceImporter{
 			State: setNameFromID,
 		},
+		Timeouts: &schema.ResourceTimeout{
+			Create: schema.DefaultTimeout(60 * time.Second),
+			Update: schema.DefaultTimeout(60 * time.Second),
+			Delete: schema.DefaultTimeout(60 * time.Second),
+		},
 		Schema: map[string]*schema.Schema{
 			"name": {
 				Type:        schema.TypeString,
@@ -87,7 +92,7 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	return readWithRetry(d, meta)
+	return readWithRetry(d, meta, d.Timeout(schema.TimeoutCreate))
 }
 
 func connectorDelete(d *schema.ResourceData, meta interface{}) error {
@@ -103,7 +108,7 @@ func connectorDelete(d *schema.ResourceData, meta interface{}) error {
 	err := withRebalanceRetry(func() error {
 		_, derr := c.DeleteConnector(req, true)
 		return derr
-	})
+	}, d.Timeout(schema.TimeoutDelete))
 	if err != nil {
 		return err
 	}
@@ -139,7 +144,7 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 	err = withRebalanceRetry(func() error {
 		conn, err = c.UpdateConnector(req, true)
 		return err
-	})
+	}, d.Timeout(schema.TimeoutUpdate))
 
 	if err == nil {
 		newConfFiltered := removeSecondKeysFromFirst(conn.Config, sensitiveCache)
@@ -154,7 +159,7 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	return readWithRetry(d, meta)
+	return readWithRetry(d, meta, d.Timeout(schema.TimeoutUpdate))
 }
 
 func connectorRead(d *schema.ResourceData, meta interface{}) error {
@@ -189,19 +194,18 @@ func connectorRead(d *schema.ResourceData, meta interface{}) error {
 // readWithRetry wraps the connectorRead function with retry functionality that
 // will attempt to read the connector again if a rebalance operation is
 // detected.
-func readWithRetry(d *schema.ResourceData, meta interface{}) error {
+func readWithRetry(d *schema.ResourceData, meta interface{}, timeout time.Duration) error {
 	return withRebalanceRetry(func() error {
 		return connectorRead(d, meta)
-	})
+	}, timeout)
 }
 
 // withRebalanceRetry executes the provided function with exponential backoff
 // retry logic specifically designed to handle Kafka Connect rebalancing
-// scenarios. Uses a fixed 60-second timeout which is appropriate for most
-// Kafka Connect deployments
-func withRebalanceRetry(fn func() error) error {
-	const rebalanceTimeout = 60 * time.Second
-	deadline := time.Now().Add(rebalanceTimeout)
+// scenarios. The timeout parameter specifies how long to wait for rebalancing
+// to complete.
+func withRebalanceRetry(fn func() error, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
 	backoff := 250 * time.Millisecond
 	const maxBackoff = 5 * time.Second
 	for {

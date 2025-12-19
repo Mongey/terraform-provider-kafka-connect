@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	r "github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
@@ -28,6 +29,25 @@ func TestAccConnectorConfigUpdate(t *testing.T) {
 			{
 				Config: testResourceConnector_updateConfig,
 				Check:  testResourceConnector_updateCheck,
+			},
+		},
+	})
+}
+
+// TestAccConnectorWithTimeouts tests that custom timeouts are properly accepted
+func TestAccConnectorWithTimeouts(t *testing.T) {
+	r.Test(t, r.TestCase{
+		PreCheck:  func() { testAccPreCheck(t) },
+		Providers: testProviders,
+		Steps: []r.TestStep{
+			{
+				Config: testResourceConnector_withTimeouts,
+				Check: r.ComposeTestCheckFunc(
+					r.TestCheckResourceAttr("kafka-connect_connector.test_timeouts", "name", "test-with-timeouts"),
+					r.TestCheckResourceAttr("kafka-connect_connector.test_timeouts", "config.tasks.max", "1"),
+					// Verify the connector was created (if it has an ID, it was created successfully)
+					r.TestCheckResourceAttrSet("kafka-connect_connector.test_timeouts", "id"),
+				),
 			},
 		},
 	})
@@ -113,6 +133,28 @@ resource "kafka-connect_connector" "test" {
 }
 `
 
+// Test configuration with custom timeouts
+const testResourceConnector_withTimeouts = `
+resource "kafka-connect_connector" "test_timeouts" {
+  name = "test-with-timeouts"
+
+  config = {
+    "name"            = "test-with-timeouts"
+    "connector.class" = "io.confluent.connect.jdbc.JdbcSinkConnector"
+    "tasks.max"       = "1"
+    "topics"          = "test-topic"
+    "connection.url"  = "jdbc:sqlite:test.db"
+    "auto.create"     = "true"
+  }
+
+  timeouts {
+    create = "10m"
+    update = "8m"
+    delete = "3m"
+  }
+}
+`
+
 func TestIsRebalanceError(t *testing.T) {
 	rebalanceErr := errors.New("rebalance in progress")
 	if !isRebalanceError(rebalanceErr) {
@@ -136,7 +178,7 @@ func TestWithRebalanceRetry(t *testing.T) {
 			return nil
 		}
 
-		err := withRebalanceRetry(operation)
+		err := withRebalanceRetry(operation, 5*time.Second)
 		if err != nil {
 			t.Errorf("expected no error, got: %v", err)
 		}
@@ -153,12 +195,85 @@ func TestWithRebalanceRetry(t *testing.T) {
 			return expectedErr
 		}
 
-		err := withRebalanceRetry(operation)
+		err := withRebalanceRetry(operation, 5*time.Second)
 		if err != expectedErr {
 			t.Errorf("expected error %v, got: %v", expectedErr, err)
 		}
 		if callCount != 1 {
 			t.Errorf("expected 1 call, got %d", callCount)
+		}
+	})
+
+	t.Run("timeout should be respected", func(t *testing.T) {
+		callCount := 0
+		operation := func() error {
+			callCount++
+			// Always return rebalance error to force timeout
+			return errors.New("rebalance in progress")
+		}
+
+		start := time.Now()
+		err := withRebalanceRetry(operation, 1*time.Second)
+		duration := time.Since(start)
+
+		if err == nil {
+			t.Errorf("expected timeout error, got nil")
+		}
+		if !errors.Is(err, errors.New("rebalance in progress")) {
+			if err.Error() != "timed out waiting for Kafka Connect rebalance to finish: rebalance in progress" {
+				t.Errorf("expected timeout error message, got: %v", err)
+			}
+		}
+		// Verify timeout was respected (should be around 1s, allow generous margin for backoff and jitter)
+		if duration < 800*time.Millisecond || duration > 2500*time.Millisecond {
+			t.Errorf("expected timeout around 1s (with margin for backoff), got %v", duration)
+		}
+		if callCount < 2 {
+			t.Errorf("expected at least 2 retry attempts, got %d", callCount)
+		}
+	})
+
+	t.Run("long timeout allows many retries", func(t *testing.T) {
+		callCount := 0
+		operation := func() error {
+			callCount++
+			if callCount < 5 {
+				return errors.New("rebalance in progress")
+			}
+			return nil
+		}
+
+		err := withRebalanceRetry(operation, 30*time.Second)
+		if err != nil {
+			t.Errorf("expected no error with long timeout, got: %v", err)
+		}
+		if callCount != 5 {
+			t.Errorf("expected 5 calls, got %d", callCount)
+		}
+	})
+
+	t.Run("very short timeout fails quickly", func(t *testing.T) {
+		callCount := 0
+		operation := func() error {
+			callCount++
+			// Add small delay to ensure timeout is hit
+			time.Sleep(100 * time.Millisecond)
+			return errors.New("rebalance in progress")
+		}
+
+		start := time.Now()
+		err := withRebalanceRetry(operation, 50*time.Millisecond)
+		duration := time.Since(start)
+
+		if err == nil {
+			t.Errorf("expected timeout error, got nil")
+		}
+		// With 50ms timeout and 100ms operation, should fail on first attempt
+		if duration > 200*time.Millisecond {
+			t.Errorf("expected fast timeout, got %v", duration)
+		}
+		if callCount != 1 {
+			t.Errorf("expected 1 call with very short timeout, got %d", callCount)
 		}
 	})
 }
