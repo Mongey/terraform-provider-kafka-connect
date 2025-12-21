@@ -77,7 +77,14 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 		Config: config,
 	}
 
-	connectorResponse, err := c.CreateConnector(req, true)
+	// Use retry logic for CreateConnector to handle race conditions
+	// where connector is created but GetConnector returns 409 if called too quickly
+	var connectorResponse kc.ConnectorResponse
+	err := withRebalanceRetry(func() error {
+		var createErr error
+		connectorResponse, createErr = c.CreateConnector(req, true)
+		return createErr
+	}, d.Timeout(schema.TimeoutCreate))
 
 	fmt.Printf("[INFO] Created the connector %v\n", connectorResponse)
 
