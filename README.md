@@ -83,6 +83,24 @@ resource "kafka-connect_connector" "sqlite-sink" {
 | `name`                | String    | Connector name                                                       |
 | `config`              | HCL Block | Connector configuration                                              |
 | `config_sensitive`    | HCL Block | Sensitive connector configuration. Will be masked in output.         |
+| `timeouts`            | HCL Block | Configurable timeouts (create, update, delete). See below.           |
+
+### Timeouts
+
+The `kafka-connect_connector` resource supports configurable timeouts:
+
+```hcl
+resource "kafka-connect_connector" "example" {
+  name = "my-connector"
+  # ... config ...
+
+  timeouts {
+    create = "10m"  # Default: 60s
+    update = "10m"  # Default: 60s - increase for large clusters with many connectors
+    delete = "5m"   # Default: 60s
+  }
+}
+```
 
 ## Developing
 
