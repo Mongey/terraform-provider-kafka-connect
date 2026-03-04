@@ -45,3 +45,8 @@ resource "kafka-connect_connector" "sqlite-sink-with-auth" {
     "connection.password" = "this-should-never-appear-unmasked"
   }
 }
+
+resource "kafka-connect_connector_status" "sqlite-sink" {
+  name  = kafka-connect_connector.sqlite-sink.name
+  state = "RUNNING"
+}
