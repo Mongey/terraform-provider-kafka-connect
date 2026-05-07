@@ -90,15 +90,15 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 	is_insecure := d.Get("tls_auth_is_insecure").(bool)
 	log.Printf("[INFO]Cert : %s\nKey: %s", crt, key)
 	log.Printf("[INFO]SSl connection is insecure : %t", is_insecure)
+	if is_insecure {
+		c.SetInsecureSSL()
+	}
 
 	if crt != "" && key != "" {
 		cert, err := tls.LoadX509KeyPair(crt, key)
 		if err != nil {
 			log.Fatalf("client: loadkeys: %s", err)
 		} else {
-			if is_insecure {
-				c.SetInsecureSSL()
-			}
 			c.SetClientCertificates(cert)
 		}
 	}
