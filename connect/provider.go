@@ -63,7 +63,8 @@ func Provider() *schema.Provider {
 		},
 		ConfigureContextFunc: providerConfigure,
 		ResourcesMap: map[string]*schema.Resource{
-			"kafka-connect_connector": kafkaConnectorResource(),
+			"kafka-connect_connector":        kafkaConnectorResource(),
+			"kafka-connect_connector_status": resourceKafkaConnectorStatus(),
 		},
 	}
 	log.Printf("[INFO] Created provider: %v", provider)
