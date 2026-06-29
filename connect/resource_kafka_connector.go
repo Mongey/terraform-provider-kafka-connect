@@ -82,14 +82,18 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 	var connectorResponse kc.ConnectorResponse
 	err := withRebalanceRetry(func() error {
 		var createErr error
-		connectorResponse, createErr = c.CreateConnector(req, true)
+		connectorResponse, createErr = c.CreateConnector(req, false)
 		return createErr
 	}, d.Timeout(schema.TimeoutCreate))
+
+	if err == nil {
+		err = waitUntilConfigured(c, name, config, d.Timeout(schema.TimeoutCreate))
+	}
 
 	fmt.Printf("[INFO] Created the connector %v\n", connectorResponse)
 
 	if err == nil {
-		newConfFiltered := removeSecondKeysFromFirst(connectorResponse.Config, sensitiveCache)
+		newConfFiltered := removeSecondKeysFromFirst(stripInternalKeys(connectorResponse.Config), sensitiveCache)
 		d.SetId(name)
 		d.Set("config_sensitive", sensitiveCache)
 		d.Set("config", newConfFiltered)
@@ -149,12 +153,16 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 	var conn kc.ConnectorResponse
 	var err error
 	err = withRebalanceRetry(func() error {
-		conn, err = c.UpdateConnector(req, true)
+		conn, err = c.UpdateConnector(req, false)
 		return err
 	}, d.Timeout(schema.TimeoutUpdate))
 
 	if err == nil {
-		newConfFiltered := removeSecondKeysFromFirst(conn.Config, sensitiveCache)
+		err = waitUntilConfigured(c, name, config, d.Timeout(schema.TimeoutUpdate))
+	}
+
+	if err == nil {
+		newConfFiltered := removeSecondKeysFromFirst(stripInternalKeys(conn.Config), sensitiveCache)
 		//log.Printf("[INFO] Full config received from update is: %v", conn.Config)
 		log.Printf("[INFO] Local config nonsensitive updated to: %v", newConfFiltered)
 		//log.Printf("[INFO] Local config_sensitive updated to:  %v", sensitiveCache)
@@ -189,7 +197,7 @@ func connectorRead(d *schema.ResourceData, meta interface{}) error {
 
 	// we do not want the sensitive values to appear in the non-masked 'config' field
 	// use cached sensitive values to get the correct keys to remove from the newly read config
-	newConfFiltered := removeSecondKeysFromFirst(conn.Config, sensitiveCache)
+	newConfFiltered := removeSecondKeysFromFirst(stripInternalKeys(conn.Config), sensitiveCache)
 	d.Set("config_sensitive", sensitiveCache)
 	d.Set("config", newConfFiltered)
 	log.Printf("[INFO] Local config nonsensitive data updated to %v", newConfFiltered)
@@ -289,3 +297,69 @@ func removeSecondKeysFromFirst(first map[string]interface{}, second map[string]i
 	}
 	return first
 }
+
+// waitUntilConfigured polls GET /connectors/{name}/config until the remote config matches what
+// was declared, then returns. This replaces the sync=true flag in the go-kafka-connect library's
+// CreateConnector/UpdateConnector, which uses the same polling approach but has a bug:
+// Confluent Platform 8.x injects __internal.* keys (e.g. __internal.config.version) into the
+// GET /config response that were never declared by the user. The library compares len(remote) vs
+// len(declared) before checking values, so the count never matches and it times out after 2 minutes
+// on every create and update. We strip those injected keys here before comparing.
+func waitUntilConfigured(c kc.HighLevelClient, name string, declared map[string]interface{}, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		resp, err := c.GetConnectorConfig(kc.ConnectorRequest{Name: name})
+		if err == nil && resp.Code < 400 {
+			remote := resp.Config
+
+			// CP 8.x injects __internal.* keys that are not part of the user config.
+			// Remove them before comparing so the length check below does not permanently fail.
+			for k := range remote {
+				if strings.HasPrefix(k, "__internal.") {
+					delete(remote, k)
+				}
+			}
+
+			// The API always echoes back "name" even if the caller omitted it, so include it
+			// in the expected set to keep the length comparison accurate.
+			want := make(map[string]interface{}, len(declared)+1)
+			for k, v := range declared {
+				want[k] = v
+			}
+			want["name"] = name
+
+			// Only check key presence, not values. The Kafka Connect REST API masks
+			// sensitive values (e.g. credentials set via ${file:...} references) in
+			// GET responses in both CP 7.x and 8.x, so value comparison is unreliable.
+			// Actual value correctness is verified by connectorRead after this returns.
+			if len(remote) == len(want) {
+				match := true
+				for k := range want {
+					if _, exists := remote[k]; !exists {
+						match = false
+						break
+					}
+				}
+				if match {
+					return nil
+				}
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out waiting for connector %s config to converge", name)
+		}
+		time.Sleep(1 * time.Second)
+	}
+}
+
+// stripInternalKeys removes keys injected by Confluent Platform 8.x (e.g. __internal.config.version)
+// that are not part of the user-defined connector config and would cause a perpetual sync-loop diff.
+func stripInternalKeys(config map[string]interface{}) map[string]interface{} {
+	for k := range config {
+		if strings.HasPrefix(k, "__internal.") {
+			delete(config, k)
+		}
+	}
+	return config
+}
+
