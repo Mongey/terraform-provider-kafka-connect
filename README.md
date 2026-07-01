@@ -1,7 +1,9 @@
 # `terraform-plugin-kafka-connect`
+
 [![test](https://github.com/Mongey/terraform-provider-kafka-connect/actions/workflows/test.yml/badge.svg)](https://github.com/Mongey/terraform-provider-kafka-connect/actions/workflows/test.yml)
 
 A [Terraform][1] plugin for managing [Apache Kafka Connect][2].
+
 ## Installation
 
 ```hcl
@@ -22,6 +24,7 @@ This method is especially useful for offline environments where Terraform cannot
 ## Example
 
 Configure the provider directly, or set the ENV variable `KAFKA_CONNECT_URL`
+
 ```hcl
 
 terraform {
@@ -38,11 +41,11 @@ provider "kafka-connect" {
   url = "http://localhost:8083"
   basic_auth_username = "user" # Optional
   basic_auth_password = "password" # Optional
-  
+
   # For TLS
   tls_auth_crt = "/tmp/cert.pem" # Optional
   tls_auth_key = "/tmp/key.pem " # Optional
-  tls_auth_is_insecure = true   # Optionnal if you do not want to check CA   
+  tls_auth_is_insecure = true   # Optionnal if you do not want to check CA
 }
 
 resource "kafka-connect_connector" "sqlite-sink" {
@@ -66,24 +69,25 @@ resource "kafka-connect_connector" "sqlite-sink" {
 
 ## Provider Properties
 
-| Property              | Type   | Example                 | Alternative environment variable name |
-|-----------------------|--------|-------------------------|---------------------------------------|
-| `url`                 | URL    | "http://localhost:8083" | `KAFKA_CONNECT_URL`                   |
-| `basic_auth_username` | String | "user"                  | `KAFKA_CONNECT_BASIC_AUTH_USERNAME`   |
-| `basic_auth_password` | String | "password"              | `KAFKA_CONNECT_BASIC_AUTH_PASSWORD`   |
-| `tls_auth_crt`        | String | "certificate"           | `KAFKA_CONNECT_TLS_AUTH_CRT`          |
-| `tls_auth_key`        | String | "Key"                   | `KAFKA_CONNECT_TLS_AUTH_KEY`          |
-| `tls_auth_is_insecure`| String | "Key"                   | `KAFKA_CONNECT_TLS_IS_INSECURE`       |
-| `headers`             | Map[String]String | {foo = "bar"}           | N/A                                   |
+| Property                  | Type              | Example                 | Alternative environment variable name   |
+| ------------------------- | ----------------- | ----------------------- | --------------------------------------- |
+| `url`                     | URL               | "http://localhost:8083" | `KAFKA_CONNECT_URL`                     |
+| `basic_auth_username`     | String            | "user"                  | `KAFKA_CONNECT_BASIC_AUTH_USERNAME`     |
+| `basic_auth_password`     | String            | "password"              | `KAFKA_CONNECT_BASIC_AUTH_PASSWORD`     |
+| `tls_auth_crt`            | String            | "certificate"           | `KAFKA_CONNECT_TLS_AUTH_CRT`            |
+| `tls_auth_key`            | String            | "Key"                   | `KAFKA_CONNECT_TLS_AUTH_KEY`            |
+| `tls_auth_is_insecure`    | String            | "Key"                   | `KAFKA_CONNECT_TLS_IS_INSECURE`         |
+| `headers`                 | Map[String]String | {foo = "bar"}           | N/A                                     |
+| `disable_internal_config` | Bool              | false                   | `KAFKA_CONNECT_DISABLE_INTERNAL_CONFIG` |
 
 ## Resource Properties
 
-| Property              | Type      | Description                                                          |
-|-----------------------|-----------|----------------------------------------------------------------------|
-| `name`                | String    | Connector name                                                       |
-| `config`              | HCL Block | Connector configuration                                              |
-| `config_sensitive`    | HCL Block | Sensitive connector configuration. Will be masked in output.         |
-| `timeouts`            | HCL Block | Configurable timeouts (create, update, delete). See below.           |
+| Property           | Type      | Description                                                  |
+| ------------------ | --------- | ------------------------------------------------------------ |
+| `name`             | String    | Connector name                                               |
+| `config`           | HCL Block | Connector configuration                                      |
+| `config_sensitive` | HCL Block | Sensitive connector configuration. Will be masked in output. |
+| `timeouts`         | HCL Block | Configurable timeouts (create, update, delete). See below.   |
 
 ### Timeouts
 
@@ -105,14 +109,14 @@ resource "kafka-connect_connector" "example" {
 ## Developing
 
 0. [Install go][install-go]
-0. Clone repository to: `$GOPATH/src/github.com/Mongey/terraform-provider-kafka-connect`
-    ``` bash
-    mkdir -p $GOPATH/src/github.com/Mongey/terraform-provider-kafka-connect; cd $GOPATH/src/github.com/Mongey/
-    git clone https://github.com/Mongey/terraform-provider-kafka-connect.git
-    ```
-0. Build the provider `make build`
-0. Run the tests `make test`
-0. Run acceptance tests `make testacc`
+1. Clone repository to: `$GOPATH/src/github.com/Mongey/terraform-provider-kafka-connect`
+   ```bash
+   mkdir -p $GOPATH/src/github.com/Mongey/terraform-provider-kafka-connect; cd $GOPATH/src/github.com/Mongey/
+   git clone https://github.com/Mongey/terraform-provider-kafka-connect.git
+   ```
+2. Build the provider `make build`
+3. Run the tests `make test`
+4. Run acceptance tests `make testacc`
 
 [1]: https://www.terraform.io
 [2]: https://kafka.apache.org/documentation/#connect

@@ -60,6 +60,11 @@ func Provider() *schema.Provider {
 				// No DefaultFunc here to read from the env on account of this issue:
 				// https://github.com/hashicorp/terraform-plugin-sdk/issues/142
 			},
+			"disable_internal_config": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("KAFKA_CONNECT_DISABLE_INTERNAL_CONFIG", false),
+			},
 		},
 		ConfigureContextFunc: providerConfigure,
 		ResourcesMap: map[string]*schema.Resource{
@@ -109,6 +114,9 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 			c.SetHeader(k, v.(string))
 		}
 	}
+
+	disable_internal_config := d.Get("disable_internal_config").(bool)
+	c.SetDisableInternalConfig(disable_internal_config)
 
 	return c, nil
 }
