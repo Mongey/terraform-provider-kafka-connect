@@ -1,12 +1,15 @@
 package connect
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log"
 	"math/rand"
+	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	kc "github.com/ricardo-ch/go-kafka-connect/v3/lib/connectors"
@@ -176,7 +179,7 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	if err := waitForConnectorUpToDate(c, name, config, d.Timeout(schema.TimeoutUpdate)); err != nil {
+	if err := waitForConnectorUpToDate(c, name, config, sensitiveCache, d.Timeout(schema.TimeoutUpdate)); err != nil {
 		return err
 	}
 
@@ -254,49 +257,114 @@ func waitForConnectorGone(c kc.HighLevelClient, name string, timeout time.Durati
 }
 
 // waitForConnectorUpToDate polls until the running connector config matches the desired state or timeout is reached.
-// It uses a custom comparison that skips values masked by Kafka Connect (e.g. password fields returned as "••••••••••••").
-func waitForConnectorUpToDate(c kc.HighLevelClient, name string, config map[string]interface{}, timeout time.Duration) error {
+// Sensitive keys are compared for presence only, because Kafka Connect masks their values in every response.
+func waitForConnectorUpToDate(c kc.HighLevelClient, name string, config map[string]interface{}, sensitive map[string]interface{}, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	req := kc.ConnectorRequest{Name: name}
 	for {
 		configResp, err := c.GetConnectorConfig(req)
-		if err == nil && configResp.Code == 200 && isConfigUpToDate(config, configResp.Config) {
-			return nil
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("timeout waiting for connector %q config to be applied", name)
+		if err == nil && configResp.Code == 200 {
+			diff := configDiff(config, configResp.Config, sensitive)
+			if len(diff) == 0 {
+				return nil
+			}
+			if time.Now().After(deadline) {
+				return fmt.Errorf("timeout waiting for connector %q config to be applied; keys still differing: %s",
+					name, strings.Join(diff, ", "))
+			}
+			log.Printf("[DEBUG] Connector %q not converged yet, keys differing: %s", name, strings.Join(diff, ", "))
+		} else if time.Now().After(deadline) {
+			return fmt.Errorf("timeout waiting for connector %q config to be applied: config could not be read (code %d, err %v)",
+				name, configResp.Code, err)
 		}
 		time.Sleep(2 * time.Second)
 	}
 }
 
-// isConfigUpToDate compares desired config with the remote config, skipping
-// values that Kafka Connect has masked (e.g. "••••••••••••" for passwords).
-func isConfigUpToDate(desired map[string]interface{}, remote map[string]interface{}) bool {
+// configDiff returns a human readable description of every desired key that has
+// not been applied on the remote side yet. An empty result means the connector
+// config has converged.
+//
+// A key is skipped from the *value* comparison when it is declared sensitive by
+// the practitioner (config_sensitive) or when the remote value looks like a
+// broker side mask. Its *presence* is always verified, so a typo in a sensitive
+// key name is still reported instead of being silently accepted.
+func configDiff(desired map[string]interface{}, remote map[string]interface{}, sensitive map[string]interface{}) []string {
+	var diff []string
+
 	for key, desiredVal := range desired {
-		remoteVal, ok := remote[key]
-		if !ok {
-			return false
+		remoteVal, present := remote[key]
+		if !present {
+			diff = append(diff, fmt.Sprintf("%s (missing on the connector)", key))
+			continue
 		}
+
 		remoteStr := fmt.Sprintf("%v", remoteVal)
+
+		if _, isSensitive := sensitive[key]; isSensitive {
+			// The broker never returns the real value, so there is nothing to compare.
+			continue
+		}
 		if isMaskedValue(remoteStr) {
+			// Sensitive value declared in the plain `config` block; the broker masked it.
+			log.Printf("[WARN] Connector config key %q is masked by Kafka Connect but is not "+
+				"declared in config_sensitive; move it there to keep the secret out of the plain config", key)
 			continue
 		}
 		if fmt.Sprintf("%v", desiredVal) != remoteStr {
-			return false
+			diff = append(diff, fmt.Sprintf("%s (remote: %s)", key, describeValue(remoteStr)))
 		}
 	}
-	return true
+
+	sort.Strings(diff)
+
+	return diff
 }
 
-// isMaskedValue returns true if the value looks like a Kafka Connect masked secret.
+// describeValue renders a remote config value for diagnostics without ever
+// printing it verbatim: the key may hold a secret we failed to recognise.
+// It reports the length and whether the value is plain ASCII, which is enough
+// to tell an unknown mask format apart from a genuinely different value.
+func describeValue(v string) string {
+	if v == "" {
+		return "empty"
+	}
+
+	sum := sha256.Sum256([]byte(v))
+	kind := "ascii"
+	for _, r := range v {
+		if r > unicode.MaxASCII {
+			kind = "non-ascii"
+			break
+		}
+	}
+
+	return fmt.Sprintf("%d chars, %s, sha256=%x", len([]rune(v)), kind, sum[:4])
+}
+
+// isMaskedValue returns true if the value looks like a value masked by the
+// broker. Kafka's own Password.toString() renders "[hidden]", while other
+// distributions return a run of U+2022 bullets. This is a best effort fallback
+// for secrets that were not declared in config_sensitive.
+//
+// Deliberately not treated as a mask: runs of '*'. Asterisks are a legitimate
+// value in plenty of connector settings (wildcards, regexes), so accepting them
+// would silently stop comparing real configuration.
 func isMaskedValue(v string) bool {
+	if v == "" {
+		return false
+	}
+	if v == "[hidden]" {
+		return true
+	}
+
 	for _, r := range v {
 		if r != '\u2022' {
 			return false
 		}
 	}
-	return len(v) > 0
+
+	return true
 }
 
 // withRebalanceRetry executes the provided function with exponential backoff
