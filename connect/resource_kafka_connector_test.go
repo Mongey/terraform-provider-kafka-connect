@@ -353,31 +353,57 @@ func newMaskingConnectAPI(t *testing.T) *httptest.Server {
 	return srv
 }
 
-// TestMaskedPasswordIsUpToDate documents the root cause.
+// TestIsConfigUpToDateWithMaskedValues covers the root cause directly.
+//
+// The library helper kc.HighLevelClient.IsUpToDate compares the config value by
+// value, so a masked secret never equals the plaintext one and the connector is
+// reported as "not up to date" forever. That is why the provider must not rely
+// on it (sync=false) and uses isConfigUpToDate instead.
 //
 // Steps:
-//  1. Start a fake Kafka Connect that masks "connection.password".
-//  2. Build the desired config the provider would send (plaintext password).
-//  3. Ask the go-kafka-connect client whether the connector is up to date.
-//     This is the very check the library performs internally when the provider
-//     calls CreateConnector/UpdateConnector with sync=true.
-//  4. Expect true: the connector *is* up to date, the only difference is the
-//     mask. A naive value-by-value comparison returns false forever, which is
-//     what makes every apply hang until the sync timeout fires.
-func TestMaskedPasswordIsUpToDate(t *testing.T) {
-	srv := newMaskingConnectAPI(t)
-
+//  1. Take the desired config (plaintext password) and the remote config as
+//     Kafka Connect returns it (password masked).
+//  2. Assert isConfigUpToDate reports convergence - the mask is skipped.
+//  3. Assert a genuinely different non-sensitive value is still detected.
+//  4. Assert a key missing on the remote side is still detected.
+func TestIsConfigUpToDateWithMaskedValues(t *testing.T) {
 	cfg, sensitive := desiredConnectorConfig()
 	desired := combineMaps(cfg, sensitive)
 
-	upToDate, err := kc.NewClient(srv.URL).IsUpToDate(testConnectorName, desired)
-	if err != nil {
-		t.Fatalf("unexpected error from IsUpToDate: %v", err)
+	if !isConfigUpToDate(desired, maskedRemoteConfig()) {
+		t.Errorf("config reported as NOT up to date only because Kafka Connect masked the " +
+			"sensitive value; masked values must be skipped, otherwise every create/update " +
+			"with config_sensitive runs into a timeout")
 	}
-	if !upToDate {
-		t.Fatalf("connector reported as NOT up to date only because Kafka Connect masked the " +
-			"sensitive value; the config comparison must skip masked values, otherwise every " +
-			"create/update with config_sensitive runs into a timeout")
+
+	stale := maskedRemoteConfig()
+	stale["tasks.max"] = "99"
+	if isConfigUpToDate(desired, stale) {
+		t.Errorf("a real difference in tasks.max must not be treated as up to date")
+	}
+
+	incomplete := maskedRemoteConfig()
+	delete(incomplete, "topics")
+	if isConfigUpToDate(desired, incomplete) {
+		t.Errorf("a key missing on the remote side must not be treated as up to date")
+	}
+}
+
+// TestIsMaskedValue pins down what counts as a Kafka Connect mask: a non-empty
+// run of U+2022 bullets and nothing else.
+func TestIsMaskedValue(t *testing.T) {
+	masked := []string{maskedValue, "\u2022", "\u2022\u2022\u2022"}
+	for _, v := range masked {
+		if !isMaskedValue(v) {
+			t.Errorf("expected %q to be detected as masked", v)
+		}
+	}
+
+	plain := []string{"", "s3cr3t", "1", "\u2022abc", "abc\u2022", "***"}
+	for _, v := range plain {
+		if isMaskedValue(v) {
+			t.Errorf("expected %q NOT to be detected as masked", v)
+		}
 	}
 }
 

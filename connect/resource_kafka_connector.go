@@ -78,11 +78,13 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	// Use retry logic for CreateConnector to handle race conditions
-	// where connector is created but GetConnector returns 409 if called too quickly
+	// where connector is created but GetConnector returns 409 if called too quickly.
+	// The library-side sync wait (sync=true) is deliberately disabled: it compares
+	// the config value by value and never converges once Kafka Connect masks a secret.
 	var connectorResponse kc.ConnectorResponse
 	err := withRebalanceRetry(func() error {
 		var createErr error
-		connectorResponse, createErr = c.CreateConnector(req, true)
+		connectorResponse, createErr = c.CreateConnector(req, false)
 		return createErr
 	}, d.Timeout(schema.TimeoutCreate))
 
@@ -96,6 +98,10 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	if err != nil {
+		return err
+	}
+
+	if err := waitForConnectorAvailable(c, name, d.Timeout(schema.TimeoutCreate)); err != nil {
 		return err
 	}
 
@@ -113,10 +119,14 @@ func connectorDelete(d *schema.ResourceData, meta interface{}) error {
 	fmt.Printf("[INFO] Deleting the connector %s\n", name)
 
 	err := withRebalanceRetry(func() error {
-		_, derr := c.DeleteConnector(req, true)
+		_, derr := c.DeleteConnector(req, false)
 		return derr
 	}, d.Timeout(schema.TimeoutDelete))
 	if err != nil {
+		return err
+	}
+
+	if err := waitForConnectorGone(c, name, d.Timeout(schema.TimeoutDelete)); err != nil {
 		return err
 	}
 
@@ -149,7 +159,7 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 	var conn kc.ConnectorResponse
 	var err error
 	err = withRebalanceRetry(func() error {
-		conn, err = c.UpdateConnector(req, true)
+		conn, err = c.UpdateConnector(req, false)
 		return err
 	}, d.Timeout(schema.TimeoutUpdate))
 
@@ -163,6 +173,10 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	if err != nil {
+		return err
+	}
+
+	if err := waitForConnectorUpToDate(c, name, config, d.Timeout(schema.TimeoutUpdate)); err != nil {
 		return err
 	}
 
@@ -205,6 +219,84 @@ func readWithRetry(d *schema.ResourceData, meta interface{}, timeout time.Durati
 	return withRebalanceRetry(func() error {
 		return connectorRead(d, meta)
 	}, timeout)
+}
+
+// waitForConnectorAvailable polls until the connector responds with HTTP 200 or timeout is reached.
+func waitForConnectorAvailable(c kc.HighLevelClient, name string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	req := kc.ConnectorRequest{Name: name}
+	for {
+		resp, err := c.GetConnector(req)
+		if err == nil && resp.Code == 200 {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout waiting for connector %q to become available", name)
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+// waitForConnectorGone polls until the connector is no longer found (HTTP 404) or timeout is reached.
+func waitForConnectorGone(c kc.HighLevelClient, name string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	req := kc.ConnectorRequest{Name: name}
+	for {
+		resp, err := c.GetConnector(req)
+		if err == nil && resp.Code == 404 {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout waiting for connector %q to be deleted", name)
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+// waitForConnectorUpToDate polls until the running connector config matches the desired state or timeout is reached.
+// It uses a custom comparison that skips values masked by Kafka Connect (e.g. password fields returned as "••••••••••••").
+func waitForConnectorUpToDate(c kc.HighLevelClient, name string, config map[string]interface{}, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	req := kc.ConnectorRequest{Name: name}
+	for {
+		configResp, err := c.GetConnectorConfig(req)
+		if err == nil && configResp.Code == 200 && isConfigUpToDate(config, configResp.Config) {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout waiting for connector %q config to be applied", name)
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+// isConfigUpToDate compares desired config with the remote config, skipping
+// values that Kafka Connect has masked (e.g. "••••••••••••" for passwords).
+func isConfigUpToDate(desired map[string]interface{}, remote map[string]interface{}) bool {
+	for key, desiredVal := range desired {
+		remoteVal, ok := remote[key]
+		if !ok {
+			return false
+		}
+		remoteStr := fmt.Sprintf("%v", remoteVal)
+		if isMaskedValue(remoteStr) {
+			continue
+		}
+		if fmt.Sprintf("%v", desiredVal) != remoteStr {
+			return false
+		}
+	}
+	return true
+}
+
+// isMaskedValue returns true if the value looks like a Kafka Connect masked secret.
+func isMaskedValue(v string) bool {
+	for _, r := range v {
+		if r != '\u2022' {
+			return false
+		}
+	}
+	return len(v) > 0
 }
 
 // withRebalanceRetry executes the provided function with exponential backoff
