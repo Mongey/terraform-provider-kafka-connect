@@ -283,22 +283,14 @@ func TestWithRebalanceRetry(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
-// Regression tests: Kafka Connect masks sensitive values (passwords) in every
-// response it returns. Any config comparison that treats those masked values
-// as ordinary values can never converge, which turns a successful update into
-// a timeout. The tests below use a fake Kafka Connect REST endpoint so they
-// run without TF_ACC and without docker-compose.
-// ---------------------------------------------------------------------------
+// Regression tests for masked sensitive values returned by Kafka Connect.
 
-// maskedValue is what Kafka Connect returns instead of a secret: a run of
-// U+2022 (BULLET) characters.
+// maskedValue is a common Kafka Connect representation of a secret.
 const maskedValue = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
 
 const testConnectorName = "sqlite-sink-secret"
 
-// desiredConnectorConfig is what the practitioner declares in HCL: the real,
-// plaintext password lives in config_sensitive.
+// desiredConnectorConfig returns a representative connector configuration.
 func desiredConnectorConfig() (nonSensitive map[string]interface{}, sensitive map[string]interface{}) {
 	return map[string]interface{}{
 		"name":            testConnectorName,
@@ -311,8 +303,7 @@ func desiredConnectorConfig() (nonSensitive map[string]interface{}, sensitive ma
 	}
 }
 
-// maskedRemoteConfig is what Kafka Connect answers with: identical to the
-// desired config except the sensitive key, which comes back masked.
+// maskedRemoteConfig returns the desired config with its secret masked.
 func maskedRemoteConfig() map[string]interface{} {
 	cfg, sensitive := desiredConnectorConfig()
 	remote := make(map[string]interface{}, len(cfg)+len(sensitive))
@@ -325,8 +316,7 @@ func maskedRemoteConfig() map[string]interface{} {
 	return remote
 }
 
-// newMaskingConnectAPI starts a minimal Kafka Connect REST API that always
-// masks sensitive values, exactly like a real broker does.
+// newMaskingConnectAPI starts a minimal API that returns masked secrets.
 func newMaskingConnectAPI(t *testing.T) *httptest.Server {
 	t.Helper()
 
@@ -335,11 +325,9 @@ func newMaskingConnectAPI(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 
 		switch {
-		// GET/PUT /connectors/{name}/config
 		case strings.HasSuffix(req.URL.Path, "/config"):
 			_ = json.NewEncoder(w).Encode(remote)
 
-		// GET /connectors/{name}
 		default:
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"name":   testConnectorName,
@@ -353,19 +341,7 @@ func newMaskingConnectAPI(t *testing.T) *httptest.Server {
 	return srv
 }
 
-// TestConfigDiffWithMaskedValues covers the root cause directly.
-//
-// The library helper kc.HighLevelClient.IsUpToDate compares the config value by
-// value, so a masked secret never equals the plaintext one and the connector is
-// reported as "not up to date" forever. That is why the provider must not rely
-// on it (sync=false) and uses configDiff instead.
-//
-// Steps:
-//  1. Take the desired config (plaintext password) and the remote config as
-//     Kafka Connect returns it (password masked).
-//  2. Assert configDiff reports convergence - the sensitive key is skipped.
-//  3. Assert a genuinely different non-sensitive value is still reported,
-//     together with the key name, so the timeout error is actionable.
+// TestConfigDiffWithMaskedValues verifies masked secrets do not cause a diff.
 func TestConfigDiffWithMaskedValues(t *testing.T) {
 	cfg, sensitive := desiredConnectorConfig()
 	desired := combineMaps(cfg, sensitive)
@@ -384,18 +360,7 @@ func TestConfigDiffWithMaskedValues(t *testing.T) {
 	}
 }
 
-// TestConfigDiffConvergesForEveryMaskFormat is the mTLS regression test.
-//
-// Kafka does not have a single mask format: Password.toString() renders
-// "[hidden]", other distributions return a run of U+2022 bullets, and a broker
-// is free to invent another one. None of them may break convergence for a key
-// the practitioner declared in config_sensitive - that declaration, not the
-// shape of the returned value, is what makes the key skippable.
-//
-// Steps:
-//  1. Declare an mTLS keystore password in config_sensitive.
-//  2. For every known mask format, let the fake broker return it for that key.
-//  3. Assert configDiff is empty in every case.
+// TestConfigDiffConvergesForEveryMaskFormat covers supported mask formats.
 func TestConfigDiffConvergesForEveryMaskFormat(t *testing.T) {
 	const mTLSKey = "producer.override.ssl.keystore.password"
 
@@ -421,13 +386,8 @@ func TestConfigDiffConvergesForEveryMaskFormat(t *testing.T) {
 	}
 }
 
-// TestConfigDiffSkipsMaskedValueOutsideConfigSensitive covers the fallback.
-//
-// Practitioners routinely put mTLS overrides such as
-// producer.override.ssl.keystore.password into the plain `config` block,
-// because they do not think of an override as a resource secret. The broker
-// masks it anyway, so the heuristic must keep the apply from timing out even
-// though the key is not declared sensitive.
+// TestConfigDiffSkipsMaskedValueOutsideConfigSensitive covers the fallback for
+// masked values that were not declared in config_sensitive.
 func TestConfigDiffSkipsMaskedValueOutsideConfigSensitive(t *testing.T) {
 	const mTLSKey = "producer.override.ssl.keystore.password"
 
@@ -440,13 +400,7 @@ func TestConfigDiffSkipsMaskedValueOutsideConfigSensitive(t *testing.T) {
 	}
 }
 
-// TestConfigDiffReportsMissingSensitiveKey is the negative case that keeps the
-// skip list honest.
-//
-// Skipping applies to the *value* of a sensitive key, never to its *presence*.
-// A typo such as "ssl.keystor.password" produces a key the broker never returns;
-// treating it as converged would trade a timeout for silence about a broken
-// configuration.
+// TestConfigDiffReportsMissingSensitiveKey ensures missing keys are reported.
 func TestConfigDiffReportsMissingSensitiveKey(t *testing.T) {
 	const typoKey = "producer.override.ssl.keystor.password"
 
@@ -454,16 +408,13 @@ func TestConfigDiffReportsMissingSensitiveKey(t *testing.T) {
 	sensitive := map[string]interface{}{typoKey: "keystore-plaintext"}
 	desired := combineMaps(cfg, sensitive)
 
-	// The broker silently dropped the unknown key.
 	diff := configDiff(desired, cfg, sensitive)
 	if len(diff) != 1 || !strings.Contains(diff[0], typoKey) || !strings.Contains(diff[0], "missing") {
 		t.Errorf("a sensitive key absent from the connector must be reported, got %v", diff)
 	}
 }
 
-// TestDescribeValueNeverLeaksTheValue makes sure the new diagnostics cannot turn
-// into a secret leak: the diff text is rendered into the error returned to the
-// practitioner and into the debug log.
+// TestDescribeValueNeverLeaksTheValue guards diagnostic output.
 func TestDescribeValueNeverLeaksTheValue(t *testing.T) {
 	const secret = "s3cr3t-plaintext"
 
@@ -476,7 +427,7 @@ func TestDescribeValueNeverLeaksTheValue(t *testing.T) {
 	}
 }
 
-// TestIsMaskedValue pins down what counts as a broker side mask.
+// TestIsMaskedValue covers recognized and ordinary values.
 func TestIsMaskedValue(t *testing.T) {
 	masked := []string{maskedValue, "\u2022", "\u2022\u2022\u2022", "[hidden]"}
 	for _, v := range masked {
@@ -485,8 +436,6 @@ func TestIsMaskedValue(t *testing.T) {
 		}
 	}
 
-	// "*" and "***" are legitimate connector values (wildcards, regexes) and
-	// must never be mistaken for a mask, otherwise real config stops being compared.
 	plain := []string{"", "s3cr3t", "1", "\u2022abc", "abc\u2022", "*", "***", ".*", "[HIDDEN]"}
 	for _, v := range plain {
 		if isMaskedValue(v) {
@@ -495,18 +444,7 @@ func TestIsMaskedValue(t *testing.T) {
 	}
 }
 
-// TestConnectorUpdateWithMaskedSensitiveValue is the end-to-end regression
-// test for the timeout itself.
-//
-// Steps:
-//  1. Start the masking fake Kafka Connect.
-//  2. Build ResourceData with config + config_sensitive, as Terraform would.
-//  3. Run connectorUpdate against the fake broker in a goroutine.
-//  4. Give it a hard 15s budget. The update does no real work, so it must
-//     finish almost instantly. If the code waits for a masked value to compare
-//     equal it will spin until the sync timeout (2 minutes in the library),
-//     and this test fails with a clear message instead of hanging the suite.
-//  5. Assert no error is returned - the update genuinely succeeded server-side.
+// TestConnectorUpdateWithMaskedSensitiveValue covers the update path.
 func TestConnectorUpdateWithMaskedSensitiveValue(t *testing.T) {
 	srv := newMaskingConnectAPI(t)
 
@@ -534,17 +472,7 @@ func TestConnectorUpdateWithMaskedSensitiveValue(t *testing.T) {
 	}
 }
 
-// TestConnectorReadDoesNotLeakMaskedValue guards the other half of the
-// contract: the mask must never end up in the non-sensitive "config" map,
-// and the locally known plaintext secret must be preserved.
-//
-// Steps:
-//  1. Start the masking fake Kafka Connect.
-//  2. Build ResourceData holding the plaintext secret in config_sensitive.
-//  3. Run connectorRead.
-//  4. Assert "config" contains none of the sensitive keys and no bullet mask.
-//  5. Assert "config_sensitive" still holds the original plaintext value,
-//     so no permanent diff is produced on the next plan.
+// TestConnectorReadDoesNotLeakMaskedValue covers state handling after a read.
 func TestConnectorReadDoesNotLeakMaskedValue(t *testing.T) {
 	srv := newMaskingConnectAPI(t)
 
@@ -580,15 +508,7 @@ func TestConnectorReadDoesNotLeakMaskedValue(t *testing.T) {
 	}
 }
 
-// TestWaitForConnectorUpToDateTimeoutNamesTheKeys checks the diagnostics that
-// the practitioner actually sees. A bare "timeout waiting for connector config
-// to be applied" is useless on a 40 key mTLS connector; the error has to say
-// which keys never converged.
-//
-// Steps:
-//  1. Start a broker that keeps answering with a stale tasks.max.
-//  2. Wait with a 1s budget, so the deadline fires on the second poll.
-//  3. Assert the error names the offending key and does not leak any value.
+// TestWaitForConnectorUpToDateTimeoutNamesTheKeys verifies timeout diagnostics.
 func TestWaitForConnectorUpToDateTimeoutNamesTheKeys(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		stale := maskedRemoteConfig()

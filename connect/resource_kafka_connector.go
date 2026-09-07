@@ -80,10 +80,7 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 		Config: config,
 	}
 
-	// Use retry logic for CreateConnector to handle race conditions
-	// where connector is created but GetConnector returns 409 if called too quickly.
-	// The library-side sync wait (sync=true) is deliberately disabled: it compares
-	// the config value by value and never converges once Kafka Connect masks a secret.
+	// Use provider-side polling because Kafka Connect masks sensitive config values.
 	var connectorResponse kc.ConnectorResponse
 	err := withRebalanceRetry(func() error {
 		var createErr error
@@ -224,7 +221,7 @@ func readWithRetry(d *schema.ResourceData, meta interface{}, timeout time.Durati
 	}, timeout)
 }
 
-// waitForConnectorAvailable polls until the connector responds with HTTP 200 or timeout is reached.
+// waitForConnectorAvailable waits until the connector can be read.
 func waitForConnectorAvailable(c kc.HighLevelClient, name string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	req := kc.ConnectorRequest{Name: name}
@@ -240,7 +237,7 @@ func waitForConnectorAvailable(c kc.HighLevelClient, name string, timeout time.D
 	}
 }
 
-// waitForConnectorGone polls until the connector is no longer found (HTTP 404) or timeout is reached.
+// waitForConnectorGone waits until the connector is no longer found.
 func waitForConnectorGone(c kc.HighLevelClient, name string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	req := kc.ConnectorRequest{Name: name}
@@ -256,8 +253,7 @@ func waitForConnectorGone(c kc.HighLevelClient, name string, timeout time.Durati
 	}
 }
 
-// waitForConnectorUpToDate polls until the running connector config matches the desired state or timeout is reached.
-// Sensitive keys are compared for presence only, because Kafka Connect masks their values in every response.
+// waitForConnectorUpToDate waits until the remote config matches the desired state.
 func waitForConnectorUpToDate(c kc.HighLevelClient, name string, config map[string]interface{}, sensitive map[string]interface{}, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	req := kc.ConnectorRequest{Name: name}
@@ -281,14 +277,9 @@ func waitForConnectorUpToDate(c kc.HighLevelClient, name string, config map[stri
 	}
 }
 
-// configDiff returns a human readable description of every desired key that has
-// not been applied on the remote side yet. An empty result means the connector
-// config has converged.
-//
-// A key is skipped from the *value* comparison when it is declared sensitive by
-// the practitioner (config_sensitive) or when the remote value looks like a
-// broker side mask. Its *presence* is always verified, so a typo in a sensitive
-// key name is still reported instead of being silently accepted.
+// configDiff returns the desired keys that differ from the remote config.
+// Sensitive values are not compared because Kafka Connect masks them, but their
+// presence is still required.
 func configDiff(desired map[string]interface{}, remote map[string]interface{}, sensitive map[string]interface{}) []string {
 	var diff []string
 
@@ -321,10 +312,7 @@ func configDiff(desired map[string]interface{}, remote map[string]interface{}, s
 	return diff
 }
 
-// describeValue renders a remote config value for diagnostics without ever
-// printing it verbatim: the key may hold a secret we failed to recognise.
-// It reports the length and whether the value is plain ASCII, which is enough
-// to tell an unknown mask format apart from a genuinely different value.
+// describeValue provides diagnostics without printing the remote value.
 func describeValue(v string) string {
 	if v == "" {
 		return "empty"
@@ -342,14 +330,7 @@ func describeValue(v string) string {
 	return fmt.Sprintf("%d chars, %s, sha256=%x", len([]rune(v)), kind, sum[:4])
 }
 
-// isMaskedValue returns true if the value looks like a value masked by the
-// broker. Kafka's own Password.toString() renders "[hidden]", while other
-// distributions return a run of U+2022 bullets. This is a best effort fallback
-// for secrets that were not declared in config_sensitive.
-//
-// Deliberately not treated as a mask: runs of '*'. Asterisks are a legitimate
-// value in plenty of connector settings (wildcards, regexes), so accepting them
-// would silently stop comparing real configuration.
+// isMaskedValue detects the mask formats commonly returned by Kafka Connect.
 func isMaskedValue(v string) bool {
 	if v == "" {
 		return false
