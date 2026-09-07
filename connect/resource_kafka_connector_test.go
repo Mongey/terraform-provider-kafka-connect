@@ -1,12 +1,17 @@
 package connect
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	r "github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	kc "github.com/ricardo-ch/go-kafka-connect/v3/lib/connectors"
 )
@@ -276,4 +281,187 @@ func TestWithRebalanceRetry(t *testing.T) {
 			t.Errorf("expected 1 call with very short timeout, got %d", callCount)
 		}
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Regression tests: Kafka Connect masks sensitive values (passwords) in every
+// response it returns. Any config comparison that treats those masked values
+// as ordinary values can never converge, which turns a successful update into
+// a timeout. The tests below use a fake Kafka Connect REST endpoint so they
+// run without TF_ACC and without docker-compose.
+// ---------------------------------------------------------------------------
+
+// maskedValue is what Kafka Connect returns instead of a secret: a run of
+// U+2022 (BULLET) characters.
+const maskedValue = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+
+const testConnectorName = "sqlite-sink-secret"
+
+// desiredConnectorConfig is what the practitioner declares in HCL: the real,
+// plaintext password lives in config_sensitive.
+func desiredConnectorConfig() (nonSensitive map[string]interface{}, sensitive map[string]interface{}) {
+	return map[string]interface{}{
+		"name":            testConnectorName,
+		"connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
+		"tasks.max":       "1",
+		"topics":          "orders",
+		"connection.url":  "jdbc:sqlite:test.db",
+	}, map[string]interface{}{
+		"connection.password": "s3cr3t-plaintext",
+	}
+}
+
+// maskedRemoteConfig is what Kafka Connect answers with: identical to the
+// desired config except the sensitive key, which comes back masked.
+func maskedRemoteConfig() map[string]interface{} {
+	cfg, sensitive := desiredConnectorConfig()
+	remote := make(map[string]interface{}, len(cfg)+len(sensitive))
+	for k, v := range cfg {
+		remote[k] = v
+	}
+	for k := range sensitive {
+		remote[k] = maskedValue
+	}
+	return remote
+}
+
+// newMaskingConnectAPI starts a minimal Kafka Connect REST API that always
+// masks sensitive values, exactly like a real broker does.
+func newMaskingConnectAPI(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		remote := maskedRemoteConfig()
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		// GET/PUT /connectors/{name}/config
+		case strings.HasSuffix(req.URL.Path, "/config"):
+			_ = json.NewEncoder(w).Encode(remote)
+
+		// GET /connectors/{name}
+		default:
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"name":   testConnectorName,
+				"config": remote,
+				"tasks":  []interface{}{},
+			})
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	return srv
+}
+
+// TestMaskedPasswordIsUpToDate documents the root cause.
+//
+// Steps:
+//  1. Start a fake Kafka Connect that masks "connection.password".
+//  2. Build the desired config the provider would send (plaintext password).
+//  3. Ask the go-kafka-connect client whether the connector is up to date.
+//     This is the very check the library performs internally when the provider
+//     calls CreateConnector/UpdateConnector with sync=true.
+//  4. Expect true: the connector *is* up to date, the only difference is the
+//     mask. A naive value-by-value comparison returns false forever, which is
+//     what makes every apply hang until the sync timeout fires.
+func TestMaskedPasswordIsUpToDate(t *testing.T) {
+	srv := newMaskingConnectAPI(t)
+
+	cfg, sensitive := desiredConnectorConfig()
+	desired := combineMaps(cfg, sensitive)
+
+	upToDate, err := kc.NewClient(srv.URL).IsUpToDate(testConnectorName, desired)
+	if err != nil {
+		t.Fatalf("unexpected error from IsUpToDate: %v", err)
+	}
+	if !upToDate {
+		t.Fatalf("connector reported as NOT up to date only because Kafka Connect masked the " +
+			"sensitive value; the config comparison must skip masked values, otherwise every " +
+			"create/update with config_sensitive runs into a timeout")
+	}
+}
+
+// TestConnectorUpdateWithMaskedSensitiveValue is the end-to-end regression
+// test for the timeout itself.
+//
+// Steps:
+//  1. Start the masking fake Kafka Connect.
+//  2. Build ResourceData with config + config_sensitive, as Terraform would.
+//  3. Run connectorUpdate against the fake broker in a goroutine.
+//  4. Give it a hard 15s budget. The update does no real work, so it must
+//     finish almost instantly. If the code waits for a masked value to compare
+//     equal it will spin until the sync timeout (2 minutes in the library),
+//     and this test fails with a clear message instead of hanging the suite.
+//  5. Assert no error is returned - the update genuinely succeeded server-side.
+func TestConnectorUpdateWithMaskedSensitiveValue(t *testing.T) {
+	srv := newMaskingConnectAPI(t)
+
+	cfg, sensitive := desiredConnectorConfig()
+	d := schema.TestResourceDataRaw(t, kafkaConnectorResource().Schema, map[string]interface{}{
+		"name":             testConnectorName,
+		"config":           cfg,
+		"config_sensitive": sensitive,
+	})
+	d.SetId(testConnectorName)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- connectorUpdate(d, kc.NewClient(srv.URL))
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("update of a connector with a masked sensitive value failed: %v", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatalf("connectorUpdate did not return within 15s: it is waiting for the masked "+
+			"value %q to become equal to the plaintext password, which never happens", maskedValue)
+	}
+}
+
+// TestConnectorReadDoesNotLeakMaskedValue guards the other half of the
+// contract: the mask must never end up in the non-sensitive "config" map,
+// and the locally known plaintext secret must be preserved.
+//
+// Steps:
+//  1. Start the masking fake Kafka Connect.
+//  2. Build ResourceData holding the plaintext secret in config_sensitive.
+//  3. Run connectorRead.
+//  4. Assert "config" contains none of the sensitive keys and no bullet mask.
+//  5. Assert "config_sensitive" still holds the original plaintext value,
+//     so no permanent diff is produced on the next plan.
+func TestConnectorReadDoesNotLeakMaskedValue(t *testing.T) {
+	srv := newMaskingConnectAPI(t)
+
+	cfg, sensitive := desiredConnectorConfig()
+	d := schema.TestResourceDataRaw(t, kafkaConnectorResource().Schema, map[string]interface{}{
+		"name":             testConnectorName,
+		"config":           cfg,
+		"config_sensitive": sensitive,
+	})
+	d.SetId(testConnectorName)
+
+	if err := connectorRead(d, kc.NewClient(srv.URL)); err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+
+	readConfig := d.Get("config").(map[string]interface{})
+	for key := range sensitive {
+		if _, present := readConfig[key]; present {
+			t.Errorf("sensitive key %q leaked into the non-sensitive config map", key)
+		}
+	}
+	for key, value := range readConfig {
+		if strings.ContainsRune(fmt.Sprintf("%v", value), '\u2022') {
+			t.Errorf("masked value stored in config[%q] = %v", key, value)
+		}
+	}
+
+	readSensitive := d.Get("config_sensitive").(map[string]interface{})
+	for key, want := range sensitive {
+		if got := fmt.Sprintf("%v", readSensitive[key]); got != fmt.Sprintf("%v", want) {
+			t.Errorf("config_sensitive[%q] = %q, want the locally known plaintext value", key, got)
+		}
+	}
 }
