@@ -1,12 +1,15 @@
 package connect
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log"
 	"math/rand"
+	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	kc "github.com/ricardo-ch/go-kafka-connect/v3/lib/connectors"
@@ -77,12 +80,11 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 		Config: config,
 	}
 
-	// Use retry logic for CreateConnector to handle race conditions
-	// where connector is created but GetConnector returns 409 if called too quickly
+	// Use provider-side polling because Kafka Connect masks sensitive config values.
 	var connectorResponse kc.ConnectorResponse
 	err := withRebalanceRetry(func() error {
 		var createErr error
-		connectorResponse, createErr = c.CreateConnector(req, true)
+		connectorResponse, createErr = c.CreateConnector(req, false)
 		return createErr
 	}, d.Timeout(schema.TimeoutCreate))
 
@@ -96,6 +98,10 @@ func connectorCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	if err != nil {
+		return err
+	}
+
+	if err := waitForConnectorAvailable(c, name, d.Timeout(schema.TimeoutCreate)); err != nil {
 		return err
 	}
 
@@ -113,10 +119,14 @@ func connectorDelete(d *schema.ResourceData, meta interface{}) error {
 	fmt.Printf("[INFO] Deleting the connector %s\n", name)
 
 	err := withRebalanceRetry(func() error {
-		_, derr := c.DeleteConnector(req, true)
+		_, derr := c.DeleteConnector(req, false)
 		return derr
 	}, d.Timeout(schema.TimeoutDelete))
 	if err != nil {
+		return err
+	}
+
+	if err := waitForConnectorGone(c, name, d.Timeout(schema.TimeoutDelete)); err != nil {
 		return err
 	}
 
@@ -149,7 +159,7 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 	var conn kc.ConnectorResponse
 	var err error
 	err = withRebalanceRetry(func() error {
-		conn, err = c.UpdateConnector(req, true)
+		conn, err = c.UpdateConnector(req, false)
 		return err
 	}, d.Timeout(schema.TimeoutUpdate))
 
@@ -163,6 +173,10 @@ func connectorUpdate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	if err != nil {
+		return err
+	}
+
+	if err := waitForConnectorUpToDate(c, name, config, sensitiveCache, d.Timeout(schema.TimeoutUpdate)); err != nil {
 		return err
 	}
 
@@ -205,6 +219,133 @@ func readWithRetry(d *schema.ResourceData, meta interface{}, timeout time.Durati
 	return withRebalanceRetry(func() error {
 		return connectorRead(d, meta)
 	}, timeout)
+}
+
+// waitForConnectorAvailable waits until the connector can be read.
+func waitForConnectorAvailable(c kc.HighLevelClient, name string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	req := kc.ConnectorRequest{Name: name}
+	for {
+		resp, err := c.GetConnector(req)
+		if err == nil && resp.Code == 200 {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout waiting for connector %q to become available", name)
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+// waitForConnectorGone waits until the connector is no longer found.
+func waitForConnectorGone(c kc.HighLevelClient, name string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	req := kc.ConnectorRequest{Name: name}
+	for {
+		resp, err := c.GetConnector(req)
+		if err == nil && resp.Code == 404 {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout waiting for connector %q to be deleted", name)
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+// waitForConnectorUpToDate waits until the remote config matches the desired state.
+func waitForConnectorUpToDate(c kc.HighLevelClient, name string, config map[string]interface{}, sensitive map[string]interface{}, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	req := kc.ConnectorRequest{Name: name}
+	for {
+		configResp, err := c.GetConnectorConfig(req)
+		if err == nil && configResp.Code == 200 {
+			diff := configDiff(config, configResp.Config, sensitive)
+			if len(diff) == 0 {
+				return nil
+			}
+			if time.Now().After(deadline) {
+				return fmt.Errorf("timeout waiting for connector %q config to be applied; keys still differing: %s",
+					name, strings.Join(diff, ", "))
+			}
+			log.Printf("[DEBUG] Connector %q not converged yet, keys differing: %s", name, strings.Join(diff, ", "))
+		} else if time.Now().After(deadline) {
+			return fmt.Errorf("timeout waiting for connector %q config to be applied: config could not be read (code %d, err %v)",
+				name, configResp.Code, err)
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+// configDiff returns the desired keys that differ from the remote config.
+// Sensitive values are not compared because Kafka Connect masks them, but their
+// presence is still required.
+func configDiff(desired map[string]interface{}, remote map[string]interface{}, sensitive map[string]interface{}) []string {
+	var diff []string
+
+	for key, desiredVal := range desired {
+		remoteVal, present := remote[key]
+		if !present {
+			diff = append(diff, fmt.Sprintf("%s (missing on the connector)", key))
+			continue
+		}
+
+		remoteStr := fmt.Sprintf("%v", remoteVal)
+
+		if _, isSensitive := sensitive[key]; isSensitive {
+			// The broker never returns the real value, so there is nothing to compare.
+			continue
+		}
+		if isMaskedValue(remoteStr) {
+			// Sensitive value declared in the plain `config` block; the broker masked it.
+			log.Printf("[WARN] Connector config key %q is masked by Kafka Connect but is not "+
+				"declared in config_sensitive; move it there to keep the secret out of the plain config", key)
+			continue
+		}
+		if fmt.Sprintf("%v", desiredVal) != remoteStr {
+			diff = append(diff, fmt.Sprintf("%s (remote: %s)", key, describeValue(remoteStr)))
+		}
+	}
+
+	sort.Strings(diff)
+
+	return diff
+}
+
+// describeValue provides diagnostics without printing the remote value.
+func describeValue(v string) string {
+	if v == "" {
+		return "empty"
+	}
+
+	sum := sha256.Sum256([]byte(v))
+	kind := "ascii"
+	for _, r := range v {
+		if r > unicode.MaxASCII {
+			kind = "non-ascii"
+			break
+		}
+	}
+
+	return fmt.Sprintf("%d chars, %s, sha256=%x", len([]rune(v)), kind, sum[:4])
+}
+
+// isMaskedValue detects the mask formats commonly returned by Kafka Connect.
+func isMaskedValue(v string) bool {
+	if v == "" {
+		return false
+	}
+	if v == "[hidden]" {
+		return true
+	}
+
+	for _, r := range v {
+		if r != '\u2022' {
+			return false
+		}
+	}
+
+	return true
 }
 
 // withRebalanceRetry executes the provided function with exponential backoff
