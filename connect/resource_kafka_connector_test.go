@@ -1,12 +1,17 @@
 package connect
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	r "github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	kc "github.com/ricardo-ch/go-kafka-connect/v3/lib/connectors"
 )
@@ -276,4 +281,256 @@ func TestWithRebalanceRetry(t *testing.T) {
 			t.Errorf("expected 1 call with very short timeout, got %d", callCount)
 		}
 	})
+}
+
+// Regression tests for masked sensitive values returned by Kafka Connect.
+
+// maskedValue is a common Kafka Connect representation of a secret.
+const maskedValue = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+
+const testConnectorName = "sqlite-sink-secret"
+
+// desiredConnectorConfig returns a representative connector configuration.
+func desiredConnectorConfig() (nonSensitive map[string]interface{}, sensitive map[string]interface{}) {
+	return map[string]interface{}{
+		"name":            testConnectorName,
+		"connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
+		"tasks.max":       "1",
+		"topics":          "orders",
+		"connection.url":  "jdbc:sqlite:test.db",
+	}, map[string]interface{}{
+		"connection.password": "s3cr3t-plaintext",
+	}
+}
+
+// maskedRemoteConfig returns the desired config with its secret masked.
+func maskedRemoteConfig() map[string]interface{} {
+	cfg, sensitive := desiredConnectorConfig()
+	remote := make(map[string]interface{}, len(cfg)+len(sensitive))
+	for k, v := range cfg {
+		remote[k] = v
+	}
+	for k := range sensitive {
+		remote[k] = maskedValue
+	}
+	return remote
+}
+
+// newMaskingConnectAPI starts a minimal API that returns masked secrets.
+func newMaskingConnectAPI(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		remote := maskedRemoteConfig()
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case strings.HasSuffix(req.URL.Path, "/config"):
+			_ = json.NewEncoder(w).Encode(remote)
+
+		default:
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"name":   testConnectorName,
+				"config": remote,
+				"tasks":  []interface{}{},
+			})
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	return srv
+}
+
+// TestConfigDiffWithMaskedValues verifies masked secrets do not cause a diff.
+func TestConfigDiffWithMaskedValues(t *testing.T) {
+	cfg, sensitive := desiredConnectorConfig()
+	desired := combineMaps(cfg, sensitive)
+
+	if diff := configDiff(desired, maskedRemoteConfig(), sensitive); len(diff) != 0 {
+		t.Errorf("config reported as NOT up to date only because Kafka Connect masked the "+
+			"sensitive value; masked values must be skipped, otherwise every create/update "+
+			"with config_sensitive runs into a timeout (diff: %v)", diff)
+	}
+
+	stale := maskedRemoteConfig()
+	stale["tasks.max"] = "99"
+	diff := configDiff(desired, stale, sensitive)
+	if len(diff) != 1 || !strings.HasPrefix(diff[0], "tasks.max ") {
+		t.Errorf("a real difference in tasks.max must be reported by key name, got %v", diff)
+	}
+}
+
+// TestConfigDiffConvergesForEveryMaskFormat covers supported mask formats.
+func TestConfigDiffConvergesForEveryMaskFormat(t *testing.T) {
+	const mTLSKey = "producer.override.ssl.keystore.password"
+
+	cfg, _ := desiredConnectorConfig()
+	sensitive := map[string]interface{}{mTLSKey: "keystore-plaintext"}
+	desired := combineMaps(cfg, sensitive)
+
+	masks := map[string]string{
+		"bullets":         maskedValue,
+		"kafka [hidden]":  "[hidden]",
+		"unknown format":  "<redacted-by-broker>",
+		"empty on broker": "",
+	}
+
+	for name, mask := range masks {
+		t.Run(name, func(t *testing.T) {
+			remote := combineMaps(cfg, map[string]interface{}{mTLSKey: mask})
+			if diff := configDiff(desired, remote, sensitive); len(diff) != 0 {
+				t.Errorf("mask format %q broke convergence for a key declared in "+
+					"config_sensitive: %v", mask, diff)
+			}
+		})
+	}
+}
+
+// TestConfigDiffSkipsMaskedValueOutsideConfigSensitive covers the fallback for
+// masked values that were not declared in config_sensitive.
+func TestConfigDiffSkipsMaskedValueOutsideConfigSensitive(t *testing.T) {
+	const mTLSKey = "producer.override.ssl.keystore.password"
+
+	cfg, _ := desiredConnectorConfig()
+	desired := combineMaps(cfg, map[string]interface{}{mTLSKey: "keystore-plaintext"})
+	remote := combineMaps(cfg, map[string]interface{}{mTLSKey: maskedValue})
+
+	if diff := configDiff(desired, remote, map[string]interface{}{}); len(diff) != 0 {
+		t.Errorf("a masked value in the plain config block must not block convergence: %v", diff)
+	}
+}
+
+// TestConfigDiffReportsMissingSensitiveKey ensures missing keys are reported.
+func TestConfigDiffReportsMissingSensitiveKey(t *testing.T) {
+	const typoKey = "producer.override.ssl.keystor.password"
+
+	cfg, _ := desiredConnectorConfig()
+	sensitive := map[string]interface{}{typoKey: "keystore-plaintext"}
+	desired := combineMaps(cfg, sensitive)
+
+	diff := configDiff(desired, cfg, sensitive)
+	if len(diff) != 1 || !strings.Contains(diff[0], typoKey) || !strings.Contains(diff[0], "missing") {
+		t.Errorf("a sensitive key absent from the connector must be reported, got %v", diff)
+	}
+}
+
+// TestDescribeValueNeverLeaksTheValue guards diagnostic output.
+func TestDescribeValueNeverLeaksTheValue(t *testing.T) {
+	const secret = "s3cr3t-plaintext"
+
+	got := describeValue(secret)
+	if strings.Contains(got, secret) {
+		t.Fatalf("describeValue leaked the raw value: %q", got)
+	}
+	if !strings.Contains(got, "16 chars") {
+		t.Errorf("describeValue should report the length, got %q", got)
+	}
+}
+
+// TestIsMaskedValue covers recognized and ordinary values.
+func TestIsMaskedValue(t *testing.T) {
+	masked := []string{maskedValue, "\u2022", "\u2022\u2022\u2022", "[hidden]"}
+	for _, v := range masked {
+		if !isMaskedValue(v) {
+			t.Errorf("expected %q to be detected as masked", v)
+		}
+	}
+
+	plain := []string{"", "s3cr3t", "1", "\u2022abc", "abc\u2022", "*", "***", ".*", "[HIDDEN]"}
+	for _, v := range plain {
+		if isMaskedValue(v) {
+			t.Errorf("expected %q NOT to be detected as masked", v)
+		}
+	}
+}
+
+// TestConnectorUpdateWithMaskedSensitiveValue covers the update path.
+func TestConnectorUpdateWithMaskedSensitiveValue(t *testing.T) {
+	srv := newMaskingConnectAPI(t)
+
+	cfg, sensitive := desiredConnectorConfig()
+	d := schema.TestResourceDataRaw(t, kafkaConnectorResource().Schema, map[string]interface{}{
+		"name":             testConnectorName,
+		"config":           cfg,
+		"config_sensitive": sensitive,
+	})
+	d.SetId(testConnectorName)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- connectorUpdate(d, kc.NewClient(srv.URL))
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("update of a connector with a masked sensitive value failed: %v", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatalf("connectorUpdate did not return within 15s: it is waiting for the masked "+
+			"value %q to become equal to the plaintext password, which never happens", maskedValue)
+	}
+}
+
+// TestConnectorReadDoesNotLeakMaskedValue covers state handling after a read.
+func TestConnectorReadDoesNotLeakMaskedValue(t *testing.T) {
+	srv := newMaskingConnectAPI(t)
+
+	cfg, sensitive := desiredConnectorConfig()
+	d := schema.TestResourceDataRaw(t, kafkaConnectorResource().Schema, map[string]interface{}{
+		"name":             testConnectorName,
+		"config":           cfg,
+		"config_sensitive": sensitive,
+	})
+	d.SetId(testConnectorName)
+
+	if err := connectorRead(d, kc.NewClient(srv.URL)); err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+
+	readConfig := d.Get("config").(map[string]interface{})
+	for key := range sensitive {
+		if _, present := readConfig[key]; present {
+			t.Errorf("sensitive key %q leaked into the non-sensitive config map", key)
+		}
+	}
+	for key, value := range readConfig {
+		if strings.ContainsRune(fmt.Sprintf("%v", value), '\u2022') {
+			t.Errorf("masked value stored in config[%q] = %v", key, value)
+		}
+	}
+
+	readSensitive := d.Get("config_sensitive").(map[string]interface{})
+	for key, want := range sensitive {
+		if got := fmt.Sprintf("%v", readSensitive[key]); got != fmt.Sprintf("%v", want) {
+			t.Errorf("config_sensitive[%q] = %q, want the locally known plaintext value", key, got)
+		}
+	}
+}
+
+// TestWaitForConnectorUpToDateTimeoutNamesTheKeys verifies timeout diagnostics.
+func TestWaitForConnectorUpToDateTimeoutNamesTheKeys(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		stale := maskedRemoteConfig()
+		stale["tasks.max"] = "99"
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(stale)
+	}))
+	defer srv.Close()
+
+	cfg, sensitive := desiredConnectorConfig()
+	desired := combineMaps(cfg, sensitive)
+
+	err := waitForConnectorUpToDate(kc.NewClient(srv.URL), testConnectorName, desired, sensitive, time.Second)
+	if err == nil {
+		t.Fatalf("expected a timeout error for a connector that never converges")
+	}
+	if !strings.Contains(err.Error(), "tasks.max") {
+		t.Errorf("timeout error must name the keys that differ, got: %v", err)
+	}
+	for key := range sensitive {
+		if strings.Contains(err.Error(), fmt.Sprintf("%v", sensitive[key])) {
+			t.Errorf("timeout error leaked a sensitive value: %v", err)
+		}
+	}
 }
