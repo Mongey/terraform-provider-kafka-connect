@@ -114,6 +114,10 @@ func connectorDelete(d *schema.ResourceData, meta interface{}) error {
 
 	err := withRebalanceRetry(func() error {
 		_, derr := c.DeleteConnector(req, true)
+		if isNotFoundError(derr, name) {
+			log.Printf("[WARN] Connector %s does not exist. Marking deletion as a success.", name)
+			return nil
+		}
 		return derr
 	}, d.Timeout(schema.TimeoutDelete))
 	if err != nil {
@@ -123,6 +127,18 @@ func connectorDelete(d *schema.ResourceData, meta interface{}) error {
 	d.SetId("")
 
 	return nil
+}
+
+// isNotFoundError tries to detect the 404 exception when a connector is not found.
+func isNotFoundError(err error, name string) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := strings.ToLower(err.Error())
+	notFoundError := fmt.Sprintf("connector %s not found", strings.ToLower(name))
+
+	return strings.Contains(msg, "404") && strings.Contains(msg, notFoundError)
 }
 
 func connectorUpdate(d *schema.ResourceData, meta interface{}) error {

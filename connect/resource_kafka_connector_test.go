@@ -167,6 +167,19 @@ func TestIsRebalanceError(t *testing.T) {
 	}
 }
 
+func TestIsNotFoundError(t *testing.T) {
+	notFoundError := errors.New("{\"error_code\":404,\"message\":\"Connector connector-name-example not found\"}")
+	connectorName := "connector-name-example"
+	if !isNotFoundError(notFoundError, connectorName) {
+		t.Errorf("expected 'not found' error to be detected")
+	}
+
+	normalErr := errors.New("connection timeout")
+	if isNotFoundError(normalErr, connectorName) {
+		t.Errorf("expected normal error to not be detected as a 'not found' error")
+	}
+}
+
 func TestWithRebalanceRetry(t *testing.T) {
 	t.Run("successful operation after rebalance errors", func(t *testing.T) {
 		callCount := 0
